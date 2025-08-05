@@ -633,14 +633,14 @@ interface IEncoder<T, int In, int Out>
         where OutputVector : IVector<T, Out>;
 }
 
-struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 3 * Levels>
+struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 2 * Levels + 1>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
     [BackwardDifferentiable]
     OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, 3>
-        where OutputVector : IVector<T, 3 * Levels>
+        where OutputVector : IVector<T, 2 * Levels + 1>
     {
         OutputVector output;
 
@@ -648,16 +648,33 @@ struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 3 * Levels>
     }
 }
 
-struct PositionalEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels * Dim>
+public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels * Dim>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
     [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(InputVector input)
+    public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
         where OutputVector : IVector<T, 2 * Levels * Dim>
     {
         OutputVector output;
+
+        [ForceUnroll]
+        for (int i = 0; i < Dim; i++)
+        {
+            T k = T(1.0);
+
+            [MaxIters(Levels)]
+            for (int j = 0; j < Levels; j++)
+            {
+                let frequency = k * T.getPi();
+                let sin = sin(frequency * input[i]);
+                let cos = cos(frequency * input[i]);
+                output[2 * j * Dim + i] = sin;
+                output[2 * j * Dim + i + Dim] = cos;
+                k *= T(2.0);
+            }
+        }
 
         return output;
     }

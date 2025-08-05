@@ -5,3 +5,4 @@ import neural;
 #include "relu_derivative_vector.slang"
 #include "mse.slang"
 #include "feed_forward.slang"
+#include "frequency_encoder.slang"
