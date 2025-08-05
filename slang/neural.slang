@@ -15,7 +15,6 @@ interface IStorage<T> : IDifferentiablePtrType
     T read(Address address);
     void write(Address address, T value);
 
-    Address getBaseAddress();
     BufferType getBufferFromAddress(Address address);
 
     static Address getOffset(Address base, int elements);
@@ -43,11 +42,6 @@ struct StructuredBufferStorage<T> : IStorage<T>
     void write(Address address, T value)
     {
         buffer[address] = value;
-    }
-
-    Address getBaseAddress()
-    {
-        return 0;
     }
 
     BufferType getBufferFromAddress(Address address)
@@ -99,11 +93,13 @@ struct BindlessBufferStorage<T> : IPointerLikeStorage<T>
     uint getParameterCount()
     {
         static_assert(false, "bad!");
+        return 0;
     }
 
     T read(Address address)
     {
         static_assert(false, "bad!");
+        return address.read();
     }
 
     void write(Address address, T value)
@@ -111,14 +107,10 @@ struct BindlessBufferStorage<T> : IPointerLikeStorage<T>
         static_assert(false, "bad!");
     }
 
-    Address getBaseAddress()
-    {
-        static_assert(false, "bad!");
-    }
-
     BufferType getBufferFromAddress(Address address)
     {
         static_assert(false, "bad!");
+        return 0;
     }
 
     static Address getOffset(Address base, int elements)
@@ -153,7 +145,7 @@ interface IVector<T, int N> : IArithmetic, IDifferentiable
     [BackwardDifferentiable] This max(This other);
 }
 
-public struct InlineVector<T, int N>
+public struct InlineVector<T, int N> : IVector<T, N>
     where T : __BuiltinFloatingPointType
 {
     internal T[N] data;
@@ -173,6 +165,7 @@ public struct InlineVector<T, int N>
 
     public __subscript(int index) -> T
     {
+        [BackwardDifferentiable]
         get() { return data[index]; }
         set() { data[index] = newValue; }
     }
@@ -181,42 +174,59 @@ public struct InlineVector<T, int N>
     [BackwardDifferentiable]
     public This add(This other)
     {
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             other[i] += this[i];
+
+        return other;
     }
     
     [BackwardDifferentiable]
     public This sub(This other)
     {
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             other[i] = this[i] - other[i];
+
+        return other;
     }
     
     [BackwardDifferentiable]
     public This mul(This other)
     {
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             other[i] *= this[i];
+
+        return other;
     }
     
     [BackwardDifferentiable]
     public This div(This other)
     {
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             other[i] = this[i] / other[i];
+
+        return other;
     }
     
     [BackwardDifferentiable]
     public This mod(This other)
     {
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             other[i] = this[i] % other[i];
+
+        return other;
     }
-    
+
     [BackwardDifferentiable]
     public This neg()
     {
         This result = this;
+
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             result[i] = -result[i];
 
@@ -250,6 +260,8 @@ public struct InlineVector<T, int N>
     public This max(T other)
     {
         This result = this;
+
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             result[i] = max(result[i], other);
 
@@ -260,6 +272,8 @@ public struct InlineVector<T, int N>
     public This max(This other)
     {
         This result = this;
+
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
             result[i] = max(result[i], other[i]);
 
@@ -370,18 +384,18 @@ public struct LeakyReLU<T> : IActivation<T>
 }
 
 // Loss functions
-interface ILoss
+public interface ILoss
 {
     [NoDiffThis, BackwardDifferentiable]
-    T eval<VectorType, T, int N>(VectorType predicted, VectorType expected)
+    public T eval<VectorType, T, int N>(VectorType predicted, VectorType expected)
         where T : __BuiltinFloatingPointType
         where VectorType : IVector<T, N>;
 }
 
-struct MeanSquaredError : ILoss
+public struct MeanSquaredError : ILoss
 {
     [NoDiffThis, BackwardDifferentiable]
-    T eval<VectorType, T, int N>(VectorType predicted, VectorType expected)
+    public T eval<VectorType, T, int N>(VectorType predicted, VectorType expected)
         where T : __BuiltinFloatingPointType
         where VectorType : IVector<T, N>
     {
@@ -477,7 +491,12 @@ struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 3 * Levels>
     [BackwardDifferentiable]
     OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, 3>
-        where OutputVector : IVector<T, 3 * Levels> { /* ... */ }
+        where OutputVector : IVector<T, 3 * Levels>
+    {
+        OutputVector output;
+
+        return output;
+    }
 }
 
 struct PositionalEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels * Dim>
@@ -486,7 +505,12 @@ struct PositionalEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels *
     [BackwardDifferentiable]
     OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, 2 * Levels * Dim> { /* ... */ }
+        where OutputVector : IVector<T, 2 * Levels * Dim>
+    {
+        OutputVector output;
+
+        return output;
+    }
 }
 
 interface ILearnableEncoder<T, int In, int Out, Storage>
@@ -510,7 +534,12 @@ struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnab
     [BackwardDifferentiable]
     OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels> { /* ... */ }
+        where OutputVector : IVector<T, Features * Levels>
+    {
+        OutputVector output;
+
+        return output;
+    }
 }
 
 // Overload for bindless storage
@@ -521,5 +550,10 @@ extension<T, int Dim, int Levels, int Features, Storage> HashGridEncoder<T, Dim,
     [BackwardDifferentiable]
     OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels> { /* ... */ }
+        where OutputVector : IVector<T, Features * Levels>
+    {
+        OutputVector output;
+
+        return output;
+    }
 }
