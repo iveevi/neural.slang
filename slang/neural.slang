@@ -159,7 +159,6 @@ interface IVector<T, int N> : IArithmetic, IDifferentiable
         set;
     }
     
-    [BackwardDifferentiable]
     OutputVector apply<int OutputSize, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address
@@ -170,12 +169,10 @@ interface IVector<T, int N> : IArithmetic, IDifferentiable
         where OutputVector.Differential == OutputVector;
     
     // Specific methods required for ML operations
-    [BackwardDifferentiable] This max(T other);
-    [BackwardDifferentiable] This max(This other);
-
+    This max(T other);
+    This max(This other);
     This step(T threshold);
-
-    [BackwardDifferentiable] T sum();
+    T sum();
 }
 
 public struct InlineVector<T, int N> : IVector<T, N>
@@ -187,8 +184,17 @@ public struct InlineVector<T, int N> : IVector<T, N>
     internal T[N] data;
     
     public __init() {}
-    public __init(int value) { data[0] = T(value); }
-    public __init(T value) { data[0] = value; }
+    
+    public __init(int value) {
+        for (int i = 0; i < N; i++)
+            data[i] = T(value);
+    }
+    
+    public __init(T value) {
+        for (int i = 0; i < N; i++)
+            data[i] = value;
+    }
+
     public __init(T[N] data) { this.data = data; }
 
     public __init(vector<T, N> data)
@@ -293,7 +299,6 @@ public struct InlineVector<T, int N> : IVector<T, N>
     }
     
     // Additional ML operations
-    [BackwardDifferentiable]
     public This max(T other)
     {
         This result = this;
@@ -305,7 +310,6 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return result;
     }
     
-    [BackwardDifferentiable]
     public This max(This other)
     {
         This result = this;
@@ -322,12 +326,11 @@ public struct InlineVector<T, int N> : IVector<T, N>
         This result = this;
 
         for (int i = 0; i < N; i++)
-            result[i] = result[i] > threshold ? T(1.0) : T(0.0);
+            result[i] = (result[i] > threshold) ? T(1.0) : T(0.0);
 
         return result;
     }
 
-    [BackwardDifferentiable]
     public T sum()
     {
         T sum = T(0.0);
@@ -357,22 +360,25 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        // Assumed matrix layout is row major:
-        // [w_11, w_12, ..., w_1N, b_1]
-        // [w_21, w_22, ..., w_2N, b_2]
-        // ...
-        // [w_N1, w_N2, ..., w_NN, b_N]
+        // Assumed matrix layout is column major:
+        // [w_11, w_21, ..., w_R1]       [x_1]
+        // [w_12, w_22, ..., w_R2]       [x_2]
+        // [.....................]   X   [...]
+        // [w_1N, w_2N, ..., w_RN]       [x_N]
+        // [b_1,  b_2,  ..., b_R ]       [ 1 ]
+        // -----------------------------------
+        // [y_1,  y_2,  ..., y_R ]
         var output = OutputVector(T(0.0));
 
         // Matrix multiplication
         for (int i = 0; i < OutputSize; i++)
         {
-            let rowOffset = Storage.getOffset(address, i * (N + 1));
-            var sum = storage.read(rowOffset);
+            let biasOffset = Storage.getOffset(address, OutputSize * N + i);
+            var sum = storage.read(biasOffset);
 
             for (int j = 0; j < N; j++)
             {
-                let colOffset = Storage.getOffset(rowOffset, j);
+                let colOffset = Storage.getOffset(address, j * OutputSize + i);
                 sum += this[j] * storage.read(colOffset);
             }
 
