@@ -84,7 +84,7 @@ void mse_main(uint3 thread_id : SV_DispatchThreadID)
     int tid = thread_id.x;
     var input = mse_globals.input[tid];
     var target = mse_globals.target[tid];
-    var loss = mse.eval(input, target);
+    var loss = mse.eval<float, 16, Vec16>(input, target);
     mse_globals.output[tid] = loss;
 }
 
