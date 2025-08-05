@@ -6,6 +6,7 @@ import argparse
 class EntryPoint:
     RELU = "relu"
     VECTOR_RELU = "vector_relu"
+    VECTOR_RELU_DERIVATIVE = "vector_relu_derivative"
     MSE = "mse"
 
 parser = argparse.ArgumentParser()
@@ -15,6 +16,7 @@ parser.add_argument(
     choices=[
         EntryPoint.RELU,
         EntryPoint.VECTOR_RELU,
+        EntryPoint.VECTOR_RELU_DERIVATIVE,
         EntryPoint.MSE,
     ],
     default=EntryPoint.RELU,
@@ -95,6 +97,37 @@ def vector_relu_program():
 
     print("output:", output.to_numpy().view(np.float32).reshape(10, 2))
 
+def vector_relu_derivative_program():
+    data = 2 * np.random.rand(10, 2).astype(np.float32) - 1
+
+    input = device.create_buffer(
+        size=data.nbytes,
+        struct_size=8,
+        usage=spy.BufferUsage.shader_resource,
+        data=data,
+    )
+    print("input:", input.to_numpy().view(np.float32).reshape(10, 2))
+
+    output = device.create_buffer(
+        size=data.nbytes,
+        struct_size=8,
+        usage=spy.BufferUsage.shader_resource,
+    )
+
+    kernel.dispatch(
+        thread_count=(10, 1, 1),
+        vars={
+            "vector_relu_derivative_globals": {
+                "input": input,
+                "output": output,
+            }
+        },
+    )
+
+    expected = np.where(data > 0, 1, 0)
+    print("expected:", expected)
+    print("output:", output.to_numpy().view(np.float32).reshape(10, 2))
+
 def mse_program():
     input_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
     target_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
@@ -138,6 +171,7 @@ def mse_program():
 map = {
     EntryPoint.RELU: relu_program,
     EntryPoint.VECTOR_RELU: vector_relu_program,
+    EntryPoint.VECTOR_RELU_DERIVATIVE: vector_relu_derivative_program,
     EntryPoint.MSE: mse_program,
 }
 

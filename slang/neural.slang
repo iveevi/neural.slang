@@ -3,54 +3,59 @@
 //////////////////
 
 // Storage types
-interface IStorage<T> : IDifferentiablePtrType
+public interface IStorage<T> : IDifferentiablePtrType
 {
     // Iterator for storage pameters
-    associatedtype Address;
+    public associatedtype Address;
 
     // Handle for matrix multiplication, likely
     // needs to conform to an appopriate interface 
-    associatedtype BufferType;
+    public associatedtype BufferType;
 
-    T read(Address address);
-    void write(Address address, T value);
+    public T read(Address address);
+    public void write(Address address, T value);
 
-    BufferType getBufferFromAddress(Address address);
+    public BufferType getBufferFromAddress(Address address);
 
-    static Address getOffset(Address base, int elements);
+    public static Address getOffset(Address base, int elements);
 }
 
-struct StructuredBufferStorage<T> : IStorage<T>
+public struct StructuredBufferStorage<T> : IStorage<T>
 {
-    typealias Differential = This;
+    public typealias Differential = This;
 
-    typealias Address = uint;
-    typealias BufferType = RWStructuredBuffer<T>;
+    public typealias Address = uint;
+    public typealias BufferType = RWStructuredBuffer<T>;
 
-    BufferType buffer;
+    public BufferType buffer;
+
+    public __init(BufferType buffer)
+    {
+        this.buffer = buffer;
+    }
     
-    uint getParameterCount()
+    public uint getParameterCount()
     {
         return buffer.getCount();
     }
 
-    T read(Address address)
+    public T read(Address address)
     {
         return buffer[address];
     }
 
-    void write(Address address, T value)
+    public void write(Address address, T value)
     {
         buffer[address] = value;
     }
 
-    BufferType getBufferFromAddress(Address address)
+    public BufferType getBufferFromAddress(Address address)
     {
         let ptr = &buffer[address];
         return bit_cast<BufferType>(ptr);
     }
 
-    static Address getOffset(Address base, int elements)
+    public static Address getOffset(Address base, int elements)
     {
         return base + elements;
     }
@@ -148,6 +153,9 @@ interface IVector<T, int N> : IArithmetic, IDifferentiable
 public struct InlineVector<T, int N> : IVector<T, N>
     where T : __BuiltinFloatingPointType
 {
+    // public typealias Differential = This;
+    public typealias Differential = InlineVector<T, N>;
+
     internal T[N] data;
     
     public __init() {}
@@ -167,6 +175,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
     {
         [BackwardDifferentiable]
         get() { return data[index]; }
+
         set() { data[index] = newValue; }
     }
 
@@ -297,6 +306,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         var output = OutputVector();
 
         // Matrix multiplication
+        // TODO: bias...
         for (int i = 0; i < OutputSize; i++)
         {
             var sum = T(0.0);
@@ -357,11 +367,24 @@ public struct Identity<T> : IActivation<T>
 public struct ReLU<T> : IActivation<T>
     where T : __BuiltinFloatingPointType
 {
-    [NoDiffThis, BackwardDifferentiable]
+    [NoDiffThis, BackwardDerivative(evalBwd)]
     public Vector eval<int N, Vector>(Vector input)
         where Vector : IVector<T, N>
     {
         return input.max(T(0.0));
+    }
+
+    void evalBwd<int N, Vector>(inout DifferentialPair<Vector> dinput, Vector.Differential doutput)
+        where Vector : IVector<T, N>
+    {
+        // TODO: select...
+        for (int i = 0; i < N; i++)
+        {
+            // if (dinput.p[i] > T(0.0))
+            //     dinput.d[i] = doutput[i];
+            // else
+            //     dinput.d[i] = T(0.0);
+        }
     }
 }
 
@@ -451,22 +474,22 @@ struct Adam<T> : IOptimizer<T>
 }
 
 // Feed forward layer
-struct FeedForward<T, int In, int Out, Storage, Activation>
+public struct FeedForward<T, int In, int Out, Storage, Activation>
     where T : __BuiltinFloatingPointType
     where Storage : IStorage<T>
     where Activation : IActivation<T>
 {
-    Storage.Address parameters;
-    no_diff Activation activation;
+    public Storage.Address parameters;
+    public no_diff Activation activation;
 
-    __init(Storage.Address parameters, Activation activation)
+    public __init(Storage.Address parameters, Activation activation)
     {
         this.parameters = parameters;
         this.activation = activation;
     }
 
     [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, In>
         where OutputVector : IVector<T, Out>
     {
@@ -474,6 +497,8 @@ struct FeedForward<T, int In, int Out, Storage, Activation>
         return activation.eval(out);
     }
 }
+
+// TODO: bindless storage overload
 
 // Encoders
 interface IEncoder<T, int In, int Out>
