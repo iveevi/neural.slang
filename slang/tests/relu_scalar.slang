@@ -7,14 +7,14 @@ struct ReLUGlobals
     RWStructuredBuffer<float> output;
 }
 
-ParameterBlock<ReLUGlobals> relu_globals;
+ParameterBlock<ReLUGlobals> globals;
 
 [shader("compute")]
-void relu_main(uint3 thread_id : SV_DispatchThreadID)
+void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
     var activation = ReLU<float>();
-    var input = InlineVector<float, 1>(relu_globals.input[tid]);
+    var input = InlineVector<float, 1>(globals.input[tid]);
     var output = activation.eval(input);
-    relu_globals.output[tid] = output[0];
+    globals.output[tid] = output[0];
 }

@@ -2,12 +2,13 @@
 import numpy as np
 import pytest
 import slangpy as spy
-from .conftest import assert_close
+from .conftest import assert_close, RANDOM_SEEDS
 
 
-def test_vector_relu_derivative(device, make_kernel):
-    kernel = make_kernel("vector_relu_derivative_main")
-    np.random.seed(42)
+@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
+def test_vector_relu_derivative(device, make_kernel, random_seed):
+    kernel = make_kernel("relu_derivative_vector")
+    np.random.seed(random_seed)
     data = 2 * np.random.rand(10, 2).astype(np.float32) - 1
     
     input_buffer = device.create_buffer(
@@ -26,7 +27,7 @@ def test_vector_relu_derivative(device, make_kernel):
     kernel.dispatch(
         thread_count=(10, 1, 1),
         vars={
-            "vector_relu_derivative_globals": {
+            "globals": {
                 "input": input_buffer,
                 "output": output_buffer,
             }

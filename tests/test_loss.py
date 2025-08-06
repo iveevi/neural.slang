@@ -2,12 +2,13 @@
 import numpy as np
 import pytest
 import slangpy as spy
-from .conftest import assert_close
+from .conftest import assert_close, RANDOM_SEEDS
 
 
-def test_mse_basic(device, make_kernel):
-    kernel = make_kernel("mse_main")
-    np.random.seed(42)
+@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
+def test_mse_basic(device, make_kernel, random_seed):
+    kernel = make_kernel("mse")
+    np.random.seed(random_seed)
     input_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
     target_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
     
@@ -34,7 +35,7 @@ def test_mse_basic(device, make_kernel):
     kernel.dispatch(
         thread_count=(10, 1, 1),
         vars={
-            "mse_globals": {
+            "globals": {
                 "input": input_buffer,
                 "target": target_buffer,
                 "output": output_buffer,

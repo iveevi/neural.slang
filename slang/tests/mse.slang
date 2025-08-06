@@ -10,16 +10,16 @@ struct MSEGlobals
     RWStructuredBuffer<float> output;
 }
 
-ParameterBlock<MSEGlobals> mse_globals;
+ParameterBlock<MSEGlobals> globals;
 
 static MeanSquaredError mse = MeanSquaredError();
 
 [shader("compute")]
-void mse_main(uint3 thread_id : SV_DispatchThreadID)
+void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
-    var input = mse_globals.input[tid];
-    var target = mse_globals.target[tid];
+    var input = globals.input[tid];
+    var target = globals.target[tid];
     var loss = mse.eval<float, 16, Vec16>(input, target);
-    mse_globals.output[tid] = loss;
+    globals.output[tid] = loss;
 }

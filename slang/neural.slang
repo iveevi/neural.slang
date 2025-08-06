@@ -1,7 +1,3 @@
-//////////////////
-// Library code //
-//////////////////
-
 // Storage types
 public interface IStorage<T> : IDifferentiablePtrType
     where T : IArithmeticAtomicable

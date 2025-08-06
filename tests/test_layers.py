@@ -2,19 +2,17 @@
 import numpy as np
 import pytest
 import slangpy as spy
-from .conftest import assert_close
+from .conftest import assert_close, RANDOM_SEEDS
+from .test_utils import create_feed_forward_parameters, compute_feed_forward_expected
 
 
-def test_feed_forward_basic(device, make_kernel):
-    kernel = make_kernel("feed_forward_main")
-    np.random.seed(42)
+@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
+def test_feed_forward_basic(device, make_kernel, random_seed):
+    kernel = make_kernel("feed_forward")
+    np.random.seed(random_seed)
     
-    # Create weights (4x8) and bias (1x8) 
-    weights_data = 2 * np.random.rand(4, 8).astype(np.float32) - 1
-    bias_data = 2 * np.random.rand(1, 8).astype(np.float32) - 1
-    
-    # Combine parameters: weights followed by bias
-    parameters_data = np.concatenate((weights_data, bias_data), axis=0)
+    # Create parameters using shared helper
+    weights_data, bias_data, parameters_data = create_feed_forward_parameters(4, 8, seed=random_seed)
     
     # Create input data (10 samples, 4 features each)
     input_data = 2 * np.random.rand(10, 4).astype(np.float32) - 1
@@ -44,7 +42,7 @@ def test_feed_forward_basic(device, make_kernel):
     kernel.dispatch(
         thread_count=(10, 1, 1),
         vars={
-            "feed_forward_globals": {
+            "globals": {
                 "parameters": parameters_buffer,
                 "input": input_buffer,
                 "output": output_buffer,
@@ -55,8 +53,7 @@ def test_feed_forward_basic(device, make_kernel):
     # Get results
     output = output_buffer.to_numpy().view(np.float32).reshape(10, 8)
     
-    # Compute expected result: linear layer followed by ReLU
-    linear_output = np.matmul(input_data, weights_data) + bias_data
-    expected = np.where(linear_output > 0, linear_output, 0)  # ReLU activation
+    # Compute expected result using shared helper
+    expected = compute_feed_forward_expected(input_data, weights_data, bias_data)
     
     assert_close(output, expected)

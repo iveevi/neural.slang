@@ -9,14 +9,14 @@ struct FrequencyEncoderGlobals
     RWStructuredBuffer<Vec24> output;
 }
 
-ParameterBlock<FrequencyEncoderGlobals> frequency_encoder_globals;
+ParameterBlock<FrequencyEncoderGlobals> globals;
 
 [shader("compute")]
-void frequency_encoder_main(uint3 thread_id : SV_DispatchThreadID)
+void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
     var encoder = FrequencyEncoder<float, 3, 4>();
-    var input = Vec3(frequency_encoder_globals.input[tid]);
+    var input = Vec3(globals.input[tid]);
     var output = encoder.eval<Vec3, Vec24>(input);
-    frequency_encoder_globals.output[tid] = output;
+    globals.output[tid] = output;
 }

@@ -1,13 +1,14 @@
 import numpy as np
 import pytest
 import slangpy as spy
-from .conftest import assert_close
+from .conftest import assert_close, RANDOM_SEEDS
 
 
-def test_frequency_encoder(device, make_kernel):
+@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
+def test_frequency_encoder(device, make_kernel, random_seed):
     """Test FrequencyEncoder with 3D input and 4 levels."""
-    kernel = make_kernel("frequency_encoder_main")
-    np.random.seed(42)
+    kernel = make_kernel("frequency_encoder")
+    np.random.seed(random_seed)
     
     # Create input data: 10 samples of 3D vectors including edge cases
     input_data = np.array([
@@ -37,7 +38,7 @@ def test_frequency_encoder(device, make_kernel):
     kernel.dispatch(
         thread_count=(10, 1, 1),
         vars={
-            "frequency_encoder_globals": {
+            "globals": {
                 "input": input_buffer,
                 "output": output_buffer,
             }

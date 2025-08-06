@@ -1,8 +1,10 @@
 import neural;
 
-// Single feed forward layer
+// Type aliases
 typealias Vec4 = InlineVector<float, 4>;
 typealias Vec8 = InlineVector<float, 8>;
+
+// Single feed forward layer
 
 struct FeedForwardGlobals
 {
@@ -12,15 +14,15 @@ struct FeedForwardGlobals
     RWStructuredBuffer<float> parameters;
 }
 
-ParameterBlock<FeedForwardGlobals> feed_forward_globals;
+ParameterBlock<FeedForwardGlobals> globals;
 
 [shader("compute")]
-void feed_forward_main(uint3 thread_id : SV_DispatchThreadID)
+void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
-    let parameters = StructuredBufferStorage<float>(feed_forward_globals.parameters);
     let tid = thread_id.x;
+    let parameters = StructuredBufferStorage<float>(globals.parameters);
     let network = FeedForward<float, 4, 8, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let input = Vec4(feed_forward_globals.input[tid]);
+    let input = Vec4(globals.input[tid]);
     let output = network.eval<Vec4, Vec8>(parameters, input);
-    feed_forward_globals.output[tid] = output;
+    globals.output[tid] = output;
 }

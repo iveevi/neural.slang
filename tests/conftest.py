@@ -5,6 +5,10 @@ import slangpy as spy
 import numpy as np
 
 
+# Random seeds for parametrized tests that use random data
+RANDOM_SEEDS = [42, 123, 456, 789, 999]
+
+
 @pytest.fixture(scope="session")
 def device():
     return spy.create_device(
@@ -16,10 +20,17 @@ def device():
 
 @pytest.fixture
 def make_kernel(device):
-    def _make_kernel(entry_point_name):
+    def _make_kernel(shader_name):
+        # Auto-add .slang extension if not present
+        if not shader_name.endswith('.slang'):
+            shader_file = f"tests/{shader_name}.slang"
+        else:
+            shader_file = f"tests/{shader_name}"
+        
+        # Always load the "computeMain" entry point
         program = device.load_program(
-            "tests/main.slang",
-            entry_point_names=[entry_point_name],
+            shader_file,
+            entry_point_names=["computeMain"],
         )
         return device.create_compute_kernel(program)
     return _make_kernel
@@ -47,5 +58,5 @@ def assert_close(actual, expected, rtol=1e-5, atol=1e-6):
     assert is_close, f"Arrays differ by more than tolerance (max_diff={max_diff}, total_error={error})"
 
 
-# Export the helper function so tests can import it
-__all__ = ['assert_close']
+# Export the helper function and constants so tests can import them
+__all__ = ['assert_close', 'RANDOM_SEEDS']
