@@ -1,2 +1,3 @@
+*.trace
 .venv/
 __pycache__/
