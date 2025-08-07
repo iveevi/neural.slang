@@ -142,7 +142,7 @@ struct BindlessBufferStorage<T> : IPointerLikeStorage<T>
 }
 
 // Vector types
-interface IVector<T, int N> : IArithmetic, IDifferentiable
+public interface IVector<T, int N> : IArithmetic, IDifferentiable
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
@@ -155,7 +155,7 @@ interface IVector<T, int N> : IArithmetic, IDifferentiable
         set;
     }
     
-    OutputVector apply<int OutputSize, Storage, OutputVector>(
+    public OutputVector apply<int OutputSize, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address
     )
@@ -417,7 +417,8 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     where T : IArithmeticAtomicable
 {
     [BackwardDerivative(applyBwd)]
-    OutputVector apply<int OutputSize, Storage, OutputVector>(
+    // [BackwardDifferentiable]
+    public OutputVector apply<int OutputSize, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address)
         where Storage : IStorage<T>
@@ -425,26 +426,20 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        // Assumed matrix layout is column major:
-        // [w_11, w_21, ..., w_R1]       [x_1]
-        // [w_12, w_22, ..., w_R2]       [x_2]
-        // [.....................]   X   [...]
-        // [w_1N, w_2N, ..., w_RN]       [x_N]
-        // [b_1,  b_2,  ..., b_R ]       [ 1 ]
-        // -----------------------------------
-        // [y_1,  y_2,  ..., y_R ]
         var output = OutputVector(T(0.0));
 
         // Matrix multiplication
+        [MaxIters(OutputSize)]
         for (int i = 0; i < OutputSize; i++)
         {
-            let biasOffset = Storage.getOffset(address, OutputSize * N + i);
+            let biasOffset = Storage.getOffset(address, N * OutputSize + i);
             var sum = storage.read(biasOffset);
 
+            [MaxIters(N)]
             for (int j = 0; j < N; j++)
             {
-                let colOffset = Storage.getOffset(address, j * OutputSize + i);
-                sum += this[j] * storage.read(colOffset);
+                let elementOffset = Storage.getOffset(address, j * OutputSize + i);
+                sum += this[j] * storage.read(elementOffset);
             }
 
             output[i] = sum;
@@ -463,44 +458,38 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        // Assumes same matrix layout as apply
-
-        // Derivative of the input is the outer product of the output differential and the weights
-        This d = This(0.0);
-        for (int i = 0; i < N; i++)
+        // Derivative of the input is transposed weight matrix times the output differential
+        var d = dthis.d;
+        for (int j = 0; j < OutputSize; j++)
         {
-            T sum = T(0.0);
-            for (int j = 0; j < OutputSize; j++)
+            for (int i = 0; i < N; i++)
             {
-                let rowOffset = Storage.getOffset(address, j * (N + 1));
-                let colOffset = Storage.getOffset(rowOffset, i);
-                sum += doutput[j] * dstorage.p.read(colOffset);
+                let elementOffset = Storage.getOffset(address, i * OutputSize + j);
+                d[i] += __slang_noop_cast<OutputVector>(doutput)[j] * dstorage.p.read(elementOffset);
             }
-
-            d[i] = sum;
         }
-
-        dthis = DifferentialPair<This>(dthis.p, d);
 
         // Derivative of the weights is the outer product of the input and the output differential
         for (int i = 0; i < N; i++)
         {
             for (int j = 0; j < OutputSize; j++)
             {
-                let rowOffset = Storage.getOffset(address, j * (N + 1));
-                let colOffset = Storage.getOffset(rowOffset, i);
-                let colOffsetDiff = __slang_noop_cast<Storage.Differential.Address>(colOffset);
-                dstorage.d.add(colOffsetDiff, dthis.p[i] * doutput[j]);
+                let x = dthis.p[i];
+                let dy = __slang_noop_cast<OutputVector>(doutput)[j];
+                let elementOffset = Storage.getOffset(address, i * OutputSize + j);
+                __slang_noop_cast<Storage>(dstorage.d).add(elementOffset, x * dy);
             }
         }
 
         // Derivative of the bias is the same as the output differential
-        for (int i = 0; i < OutputSize; i++)
+        for (int j = 0; j < OutputSize; j++)
         {
-            let biasOffset = Storage.getOffset(address, i * (N + 1) + N);
-            let biasOffsetDiff = __slang_noop_cast<Storage.Differential.Address>(biasOffset);
-            dstorage.d.add(biasOffsetDiff, doutput[i]);
+            let dout = __slang_noop_cast<OutputVector>(doutput)[j];
+            let biasOffset = Storage.getOffset(address, N * OutputSize + j);
+            __slang_noop_cast<Storage>(dstorage.d).add(biasOffset, dout);
         }
+
+        dthis = DifferentialPair<This>(dthis.p, d);
     }
 }
 
@@ -660,7 +649,7 @@ public struct FeedForward<T, int In, int Out, Storage, Activation>
         this.activation = activation;
     }
 
-    [BackwardDifferentiable]
+    [NoDiffThis, BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, In>
         where OutputVector : IVector<T, Out>

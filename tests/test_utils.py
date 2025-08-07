@@ -17,7 +17,6 @@ def create_feed_forward_parameters(input_size, output_size, seed=None):
 
 
 def compute_feed_forward_expected(input_data, weights, bias):
-
     linear_output = np.matmul(input_data, weights) + bias
     return np.where(linear_output > 0, linear_output, 0)  # ReLU activation
 

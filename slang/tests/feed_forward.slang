@@ -1,11 +1,9 @@
 import neural;
 
-// Type aliases
 typealias Vec4 = InlineVector<float, 4>;
 typealias Vec8 = InlineVector<float, 8>;
 
 // Single feed forward layer
-
 struct FeedForwardGlobals
 {
     RWStructuredBuffer<Vec4> input;
