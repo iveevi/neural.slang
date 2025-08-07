@@ -179,7 +179,10 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
     internal T[N] data;
     
-    public __init() {}
+    public __init() {
+        for (int i = 0; i < N; i++)
+            data[i] = T(0.0);
+    }
     
     public __init(int value) {
         for (int i = 0; i < N; i++)
@@ -193,34 +196,67 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
     public __init(T[N] data) { this.data = data; }
 
-    public __init(vector<T, N> data)
-    {
-        for (int i = 0; i < N; i++)
-            this.data[i] = data[i];
-    }
-
     public __init(This other) { this.data = other.data; }
 
     public __subscript(int index) -> T
     {
         [BackwardDifferentiable]
-        get() { return data[index]; }
+        get() { return getIndex(index); }
 
         set() { data[index] = newValue; }
     }
 
+    [BackwardDerivative(getIndexBwd)]
+    public T getIndex(int index)
+    {
+        return data[index];
+    }
+
+    static void getIndexBwd(inout DifferentialPair<This> dthis, int index, T.Differential dloss)
+    {
+        var d = dthis.d;
+        d.data[index] += __slang_noop_cast<T>(dloss);
+        dthis = DifferentialPair<This>(dthis.p, d);
+    }
+
+    // Autodiff dX
+    static Differential dzero()
+    {
+        return This(T(0.0));
+    }
+
+    static Differential dadd(Differential a, Differential b)
+    {
+        return a.add(b);
+    }
+
+    static Differential dmul(Differential a, Differential b)
+    {
+        return a.mul(b);
+    }
+
     // Arithmetic operations
-    [BackwardDifferentiable]
+    [BackwardDerivative(addBwd)]
     public This add(This other)
     {
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
-            other[i] += this[i];
+            other[i] = this[i] + other[i];
 
         return other;
     }
+
+    static void addBwd(
+        inout DifferentialPair<This> dthis,
+        inout DifferentialPair<This> dother,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dadd(dthis.d, doutput));
+        dother = DifferentialPair<This>(dother.p, dadd(dother.d, doutput));
+    }
     
-    [BackwardDifferentiable]
+    [BackwardDerivative(subBwd)]
     public This sub(This other)
     {
         [MaxIters(N)]
@@ -230,17 +266,37 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return other;
     }
     
-    [BackwardDifferentiable]
+    static void subBwd(
+        inout DifferentialPair<This> dthis,
+        inout DifferentialPair<This> dother,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dadd(dthis.d, doutput));
+        dother = DifferentialPair<This>(dother.p, dadd(dother.d, doutput.neg()));
+    }
+    
+    [BackwardDerivative(mulBwd)]
     public This mul(This other)
     {
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
-            other[i] *= this[i];
+            other[i] = this[i] * other[i];
 
         return other;
     }
-    
-    [BackwardDifferentiable]
+
+    static void mulBwd(
+        inout DifferentialPair<This> dthis,
+        inout DifferentialPair<This> dother,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dadd(dthis.d, dmul(dother.p, doutput)));
+        dother = DifferentialPair<This>(dother.p, dadd(dother.d, dmul(dthis.p, doutput)));
+    }
+
+    [BackwardDerivative(divBwd)]
     public This div(This other)
     {
         [MaxIters(N)]
@@ -249,8 +305,21 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
         return other;
     }
+
+    static void divBwd(
+        inout DifferentialPair<This> dthis,
+        inout DifferentialPair<This> dother,
+        Differential doutput
+    )
+    {
+        // For c = a / b: dc/da = 1/b * dc, dc/db = -a/(b^2) * dc
+        let one_over_b = This(T(1.0)).div(dother.p);
+        let neg_a_over_b_squared = dthis.p.neg().div(dother.p).div(dother.p);
+        
+        dthis = DifferentialPair<This>(dthis.p, dadd(dthis.d, dmul(one_over_b, doutput)));
+        dother = DifferentialPair<This>(dother.p, dadd(dother.d, dmul(neg_a_over_b_squared, doutput)));
+    }
     
-    [BackwardDifferentiable]
     public This mod(This other)
     {
         [MaxIters(N)]
@@ -260,14 +329,13 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return other;
     }
 
-    [BackwardDifferentiable]
     public This neg()
     {
         This result = this;
 
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
-            result[i] = -result[i];
+            result[i] = -this[i];
 
         return result;
     }
@@ -276,21 +344,21 @@ public struct InlineVector<T, int N> : IVector<T, N>
     public bool equals(This other)
     {
         for (int i = 0; i < N; i++)
-            if (this[i] != other[i]) return false;
+            if (this.data[i] != other.data[i]) return false;
         return true;
     }
     
     public bool lessThan(This other)
     {
         for (int i = 0; i < N; i++)
-            if (this[i] >= other[i]) return false;
+            if (this.data[i] >= other.data[i]) return false;
         return true;
     }
     
     public bool lessThanOrEquals(This other)
     {
         for (int i = 0; i < N; i++)
-            if (this[i] > other[i]) return false;
+            if (this.data[i] > other.data[i]) return false;
         return true;
     }
     
@@ -301,7 +369,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
-            result[i] = max(result[i], other);
+            result.data[i] = max(result.data[i], other);
 
         return result;
     }
@@ -312,7 +380,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
-            result[i] = max(result[i], other[i]);
+            result.data[i] = max(result.data[i], other.data[i]);
 
         return result;
     }
@@ -322,18 +390,19 @@ public struct InlineVector<T, int N> : IVector<T, N>
         This result = this;
 
         for (int i = 0; i < N; i++)
-            result[i] = (result[i] > threshold) ? T(1.0) : T(0.0);
+            result.data[i] = (result.data[i] > threshold) ? T(1.0) : T(0.0);
 
         return result;
     }
 
+    [BackwardDifferentiable]
     public T sum()
     {
         T sum = T(0.0);
 
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
-            sum += data[i];
+            sum += this[i];
 
         return sum;
     }
@@ -511,42 +580,28 @@ public struct LeakyReLU<T> : IActivation<T>
 }
 
 // Loss functions
-public interface ILoss
+public interface ILoss<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
 {
     [NoDiffThis, BackwardDifferentiable]
-    public T eval<T, int N, Vector>(Vector predicted, no_diff Vector expected)
-        where T : __BuiltinFloatingPointType
-        where T : IArithmeticAtomicable
+    public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
         where Vector : IVector<T, N>
         where Vector.Differential == Vector;
 }
 
-public struct MeanSquaredError : ILoss
+public struct MeanSquaredError<T> : ILoss<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
 {
-    [NoDiffThis, BackwardDerivative(evalBwd)]
-    public T eval<T, int N, Vector>(Vector predicted, no_diff Vector expected)
-        where T : __BuiltinFloatingPointType
-        where T : IArithmeticAtomicable
+    [NoDiffThis, BackwardDifferentiable]
+    public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
         where Vector : IVector<T, N>
         where Vector.Differential == Vector
     {
-        let diff = predicted - expected;
-        let square = diff * diff;
+        let diff = predicted.sub(expected);
+        let square = diff.mul(diff);
         return square.sum() / T(N);
-    }
-
-    void evalBwd<T, int N, Vector>(
-        inout DifferentialPair<Vector> dpredicted,
-        no_diff Vector expected,
-        T.Differential dloss
-    )
-        where T : __BuiltinFloatingPointType
-        where T : IArithmeticAtomicable
-        where Vector : IVector<T, N>
-        where Vector.Differential == Vector
-    {
-        let d = (dpredicted.p - expected) * Vector(T(2.0) / T(N));
-        dpredicted = DifferentialPair<Vector>(dpredicted.p, d);
     }
 }
 
