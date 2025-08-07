@@ -4,7 +4,20 @@ import pytest
 import torch
 import slangpy as spy
 from .conftest import assert_close, RANDOM_SEEDS
-from .test_utils import create_feed_forward_parameters
+
+
+def create_linear_layer_data(input_size, output_size, random_seed):
+    """Create a PyTorch linear layer and extract its parameters."""
+    torch.manual_seed(random_seed)
+    
+    linear_layer = torch.nn.Linear(input_size, output_size)
+    
+    # Extract parameters in the format expected by the kernel
+    weights_data = linear_layer.weight.detach().numpy().T  # Transpose back for kernel
+    bias_data = linear_layer.bias.detach().numpy().reshape(1, -1)
+    parameters_data = np.ascontiguousarray(np.concatenate((weights_data, bias_data), axis=0).astype(np.float32))
+    
+    return linear_layer, weights_data, bias_data, parameters_data
 
 
 @pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
@@ -13,8 +26,8 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     kernel = make_kernel("feed_forward")
     np.random.seed(random_seed)
     
-    # Create parameters using shared helper
-    weights_data, bias_data, parameters_data = create_feed_forward_parameters(4, 8, seed=random_seed)
+    # Create linear layer and parameters
+    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(4, 8, random_seed)
     
     # Create input data (10 samples, 4 features each)
     input_data = 2 * np.random.rand(10, 4).astype(np.float32) - 1
@@ -55,14 +68,8 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     # Get results
     output = output_buffer.to_numpy().view(np.float32).reshape(10, 8)
     
-    # Compute expected result using nn.Linear
+    # Compute expected result using the created linear layer
     input_torch = torch.tensor(input_data)
-    linear_layer = torch.nn.Linear(4, 8)
-    
-    # Set the linear layer weights and bias to match our test data
-    with torch.no_grad():
-        linear_layer.weight.copy_(torch.tensor(weights_data.T))  # nn.Linear expects transposed weights
-        linear_layer.bias.copy_(torch.tensor(bias_data.squeeze()))
     
     # Compute expected output
     linear_output = linear_layer(input_torch)
@@ -77,8 +84,8 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     kernel = make_kernel("feed_forward_derivative")
     np.random.seed(random_seed)
     
-    # Create parameters using shared helper
-    weights_data, bias_data, parameters_data = create_feed_forward_parameters(4, 8, seed=random_seed)
+    # Create linear layer and parameters
+    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(4, 8, random_seed)
     
     # Create input data (10 samples, 4 features each)
     input_data = 2 * np.random.rand(10, 4).astype(np.float32) - 1
@@ -129,14 +136,8 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(10, 4)
     parameter_derivatives = dparameters_buffer.to_numpy().view(np.float32).reshape(parameters_data.shape)
     
-    # Compute expected derivatives using PyTorch autograd with nn.Linear
+    # Compute expected derivatives using PyTorch autograd with the created linear layer
     input_torch = torch.tensor(input_data, requires_grad=True)
-    
-    # Create linear layer and set weights/bias
-    linear_layer = torch.nn.Linear(4, 8)
-    with torch.no_grad():
-        linear_layer.weight.copy_(torch.tensor(weights_data.T))  # nn.Linear expects transposed weights
-        linear_layer.bias.copy_(torch.tensor(bias_data.squeeze()))
     
     # Enable gradient tracking for layer parameters
     linear_layer.weight.requires_grad_(True)

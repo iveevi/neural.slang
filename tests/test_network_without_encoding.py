@@ -4,10 +4,39 @@ import slangpy as spy
 import torch
 from .conftest import assert_close, RANDOM_SEEDS
 from .test_utils import (
-    create_feed_forward_parameters, 
     create_buffer_for_data,
     create_output_buffer
 )
+
+
+def create_network_layers(random_seed):
+    """Create PyTorch network layers and extract their parameters."""
+    torch.manual_seed(random_seed)
+    
+    # Create the neural network (4 -> 8 -> 8 -> 4)
+    network = torch.nn.Sequential(
+        torch.nn.Linear(4, 8),
+        torch.nn.ReLU(),
+        torch.nn.Linear(8, 8), 
+        torch.nn.ReLU(),
+        torch.nn.Linear(8, 4),
+        torch.nn.ReLU()
+    )
+    
+    # Extract parameters in the format expected by the kernel
+    layer1_weights = network[0].weight.detach().numpy().T  # Transpose back for kernel
+    layer1_bias = network[0].bias.detach().numpy().reshape(1, -1)
+    layer1_params = np.ascontiguousarray(np.concatenate((layer1_weights, layer1_bias), axis=0).astype(np.float32))
+    
+    layer2_weights = network[2].weight.detach().numpy().T
+    layer2_bias = network[2].bias.detach().numpy().reshape(1, -1)
+    layer2_params = np.ascontiguousarray(np.concatenate((layer2_weights, layer2_bias), axis=0).astype(np.float32))
+    
+    layer3_weights = network[4].weight.detach().numpy().T
+    layer3_bias = network[4].bias.detach().numpy().reshape(1, -1)
+    layer3_params = np.ascontiguousarray(np.concatenate((layer3_weights, layer3_bias), axis=0).astype(np.float32))
+    
+    return network, layer1_params, layer2_params, layer3_params
 
 
 @pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
@@ -15,10 +44,8 @@ def test_network_without_encoding(device, make_kernel, random_seed):
     """Test the 4→8→8→4 network without encoding using nn.Linear layers."""
     kernel = make_kernel("network_without_encoding")
     
-    # Create parameters for 4 -> 8 -> 8 -> 4 network
-    weights1, bias1, params1 = create_feed_forward_parameters(4, 8, seed=random_seed)
-    weights2, bias2, params2 = create_feed_forward_parameters(8, 8, seed=random_seed + 1) 
-    weights3, bias3, params3 = create_feed_forward_parameters(8, 4, seed=random_seed + 2)
+    # Create network and parameters
+    network, layer1_params, layer2_params, layer3_params = create_network_layers(random_seed)
     
     # Test multiple scenarios in one batch - keep inputs in reasonable range
     np.random.seed(random_seed)
@@ -34,9 +61,9 @@ def test_network_without_encoding(device, make_kernel, random_seed):
     # Create buffers
     input_buffer = create_buffer_for_data(device, test_inputs, 4 * 4)
     output_buffer = create_output_buffer(device, batch_size, 4)
-    layer1_buffer = create_buffer_for_data(device, params1, 4)
-    layer2_buffer = create_buffer_for_data(device, params2, 4)
-    layer3_buffer = create_buffer_for_data(device, params3, 4)
+    layer1_buffer = create_buffer_for_data(device, layer1_params, 4)
+    layer2_buffer = create_buffer_for_data(device, layer2_params, 4)
+    layer3_buffer = create_buffer_for_data(device, layer3_params, 4)
     
     # Run kernel
     kernel.dispatch(
@@ -58,25 +85,6 @@ def test_network_without_encoding(device, make_kernel, random_seed):
     # Compute expected result using nn.Sequential with nn.Linear layers
     input_torch = torch.tensor(test_inputs)
     
-    # Create the network using nn.Linear layers
-    network = torch.nn.Sequential(
-        torch.nn.Linear(4, 8),
-        torch.nn.ReLU(),
-        torch.nn.Linear(8, 8), 
-        torch.nn.ReLU(),
-        torch.nn.Linear(8, 4),
-        torch.nn.ReLU()
-    )
-    
-    # Set the weights and biases to match our test data
-    with torch.no_grad():
-        network[0].weight.copy_(torch.tensor(weights1.T))  # nn.Linear expects transposed weights
-        network[0].bias.copy_(torch.tensor(bias1.squeeze()))
-        network[2].weight.copy_(torch.tensor(weights2.T))
-        network[2].bias.copy_(torch.tensor(bias2.squeeze()))
-        network[4].weight.copy_(torch.tensor(weights3.T))
-        network[4].bias.copy_(torch.tensor(bias3.squeeze()))
-    
     # Compute expected output
     expected = network(input_torch).detach().numpy()
     
@@ -87,14 +95,12 @@ def test_network_without_encoding(device, make_kernel, random_seed):
 def test_network_without_encoding_derivative(device, make_kernel, random_seed):
     """Test network derivatives against PyTorch autograd using nn.Linear layers."""
     kernel = make_kernel("network_without_encoding_derivative")
-    np.random.seed(random_seed)
     
-    # Create parameters for 4 -> 8 -> 8 -> 4 network
-    weights1, bias1, params1 = create_feed_forward_parameters(4, 8, seed=random_seed)
-    weights2, bias2, params2 = create_feed_forward_parameters(8, 8, seed=random_seed + 1)
-    weights3, bias3, params3 = create_feed_forward_parameters(8, 4, seed=random_seed + 2)
+    # Create network and parameters
+    network, layer1_params, layer2_params, layer3_params = create_network_layers(random_seed)
     
     # Create smaller test inputs for gradient testing
+    np.random.seed(random_seed)
     test_inputs = np.array([
         [0.1, -0.1, 0.2, -0.05],   # Small specific values
         [0.0, 0.0, 0.0, 0.0],      # Zero input (bias test)
@@ -108,14 +114,14 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed):
     dinput_buffer = create_output_buffer(device, batch_size, 4)
     
     # Create parameter buffers
-    layer1_buffer = create_buffer_for_data(device, params1, 4)
-    layer2_buffer = create_buffer_for_data(device, params2, 4)
-    layer3_buffer = create_buffer_for_data(device, params3, 4)
+    layer1_buffer = create_buffer_for_data(device, layer1_params, 4)
+    layer2_buffer = create_buffer_for_data(device, layer2_params, 4)
+    layer3_buffer = create_buffer_for_data(device, layer3_params, 4)
     
     # Create gradient buffers for parameters
-    dlayer1_buffer = create_output_buffer(device, params1.shape[0], params1.shape[1])
-    dlayer2_buffer = create_output_buffer(device, params2.shape[0], params2.shape[1])
-    dlayer3_buffer = create_output_buffer(device, params3.shape[0], params3.shape[1])
+    dlayer1_buffer = create_output_buffer(device, layer1_params.shape[0], layer1_params.shape[1])
+    dlayer2_buffer = create_output_buffer(device, layer2_params.shape[0], layer2_params.shape[1])
+    dlayer3_buffer = create_output_buffer(device, layer3_params.shape[0], layer3_params.shape[1])
     
     # Run kernel
     kernel.dispatch(
@@ -136,31 +142,12 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed):
     
     # Get derivative results
     input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(batch_size, 4)
-    layer1_derivatives = dlayer1_buffer.to_numpy().view(np.float32).reshape(params1.shape)
-    layer2_derivatives = dlayer2_buffer.to_numpy().view(np.float32).reshape(params2.shape)
-    layer3_derivatives = dlayer3_buffer.to_numpy().view(np.float32).reshape(params3.shape)
+    layer1_derivatives = dlayer1_buffer.to_numpy().view(np.float32).reshape(layer1_params.shape)
+    layer2_derivatives = dlayer2_buffer.to_numpy().view(np.float32).reshape(layer2_params.shape)
+    layer3_derivatives = dlayer3_buffer.to_numpy().view(np.float32).reshape(layer3_params.shape)
     
     # Compute expected derivatives using PyTorch autograd with nn.Linear layers
     input_torch = torch.tensor(test_inputs, requires_grad=True)
-    
-    # Create the network using nn.Linear layers
-    network = torch.nn.Sequential(
-        torch.nn.Linear(4, 8),
-        torch.nn.ReLU(),
-        torch.nn.Linear(8, 8), 
-        torch.nn.ReLU(),
-        torch.nn.Linear(8, 4),
-        torch.nn.ReLU()
-    )
-    
-    # Set the weights and biases to match our test data and enable gradients
-    with torch.no_grad():
-        network[0].weight.copy_(torch.tensor(weights1.T))  # nn.Linear expects transposed weights
-        network[0].bias.copy_(torch.tensor(bias1.squeeze()))
-        network[2].weight.copy_(torch.tensor(weights2.T))
-        network[2].bias.copy_(torch.tensor(bias2.squeeze()))
-        network[4].weight.copy_(torch.tensor(weights3.T))
-        network[4].bias.copy_(torch.tensor(bias3.squeeze()))
     
     # Enable gradient tracking for all parameters
     for param in network.parameters():
@@ -174,15 +161,15 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed):
     total_loss.backward()
     
     # Get expected gradients
-    expected_input_grad = input_torch.grad.numpy()
+    expected_input_grad = input_torch.grad.detach().numpy()
     
     # Extract parameter gradients and convert back to our parameter layout
-    expected_w1_grad = network[0].weight.grad.numpy().T
-    expected_b1_grad = network[0].bias.grad.numpy().reshape(1, -1)
-    expected_w2_grad = network[2].weight.grad.numpy().T
-    expected_b2_grad = network[2].bias.grad.numpy().reshape(1, -1)
-    expected_w3_grad = network[4].weight.grad.numpy().T
-    expected_b3_grad = network[4].bias.grad.numpy().reshape(1, -1)
+    expected_w1_grad = network[0].weight.grad.detach().numpy().T
+    expected_b1_grad = network[0].bias.grad.detach().numpy().reshape(1, -1)
+    expected_w2_grad = network[2].weight.grad.detach().numpy().T
+    expected_b2_grad = network[2].bias.grad.detach().numpy().reshape(1, -1)
+    expected_w3_grad = network[4].weight.grad.detach().numpy().T
+    expected_b3_grad = network[4].bias.grad.detach().numpy().reshape(1, -1)
     
     # Combine expected parameter gradients to match layout
     expected_layer1_grad = np.concatenate((expected_w1_grad, expected_b1_grad), axis=0)
