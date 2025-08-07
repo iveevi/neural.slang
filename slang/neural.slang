@@ -703,7 +703,7 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
-    [BackwardDifferentiable]
+    [BackwardDerivative(evalBwd)]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
         where OutputVector : IVector<T, 2 * Levels * Dim>
@@ -715,7 +715,6 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
         {
             T k = T(1.0);
 
-            [MaxIters(Levels)]
             for (int j = 0; j < Levels; j++)
             {
                 let frequency = k * T.getPi();
@@ -728,6 +727,34 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
         }
 
         return output;
+    }
+
+    void evalBwd<InputVector, OutputVector>(inout DifferentialPair<InputVector> dinput, OutputVector.Differential doutput)
+        where InputVector : IVector<T, Dim>
+        where OutputVector : IVector<T, 2 * Levels * Dim>
+    {
+        let p = __slang_noop_cast<InputVector>(dinput.p);
+        var d = __slang_noop_cast<InputVector>(dinput.d);
+        let dout = __slang_noop_cast<OutputVector>(doutput);
+
+        [ForceUnroll]
+        for (int i = 0; i < Dim; i++)
+        {
+            T k = T(1.0);
+            for (int j = 0; j < Levels; j++)
+            {
+                let frequency = k * T.getPi();
+                let sinVal = sin(frequency * p[i]);
+                let cosVal = cos(frequency * p[i]);
+                let dsinOut = dout[2 * j * Dim + i];
+                let dcosOut = dout[2 * j * Dim + i + Dim];
+                d[i] += dsinOut * cosVal * frequency;
+                d[i] += dcosOut * -sinVal * frequency;
+                k *= T(2.0);
+            }
+        }
+
+        dinput = DifferentialPair<InputVector>(p, __slang_noop_cast<InputVector.Differential>(d));
     }
 }
 
