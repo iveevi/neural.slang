@@ -1,14 +1,18 @@
 import neural;
 
-// Type aliases
-typealias Vec4 = InlineVector<float, 4>;
-typealias Vec32 = InlineVector<float, 32>;
+extern static const int In;
+extern static const int Hidden;
+extern static const int Out;
 
-// Network with 4 -> 32 -> 32 -> 32 -> 4 layers - derivative version
+typealias InputVec = InlineVector<float, In>;
+typealias HiddenVec = InlineVector<float, Hidden>;
+typealias OutputVec = InlineVector<float, Out>;
+
+// Network with In -> Hidden -> Hidden -> Hidden -> Out layers - derivative version
 struct NetworkWithoutEncodingDerivativeGlobals
 {
-    RWStructuredBuffer<Vec4> input;
-    RWStructuredBuffer<Vec4> dinput;
+    RWStructuredBuffer<InputVec> input;
+    RWStructuredBuffer<InputVec> dinput;
     
     RWStructuredBuffer<float> layer1;
     RWStructuredBuffer<float> dlayer1;
@@ -23,22 +27,22 @@ struct NetworkWithoutEncodingDerivativeGlobals
 ParameterBlock<NetworkWithoutEncodingDerivativeGlobals> globals;
 
 [BackwardDifferentiable]
-Vec4 network_forward(
+OutputVec network_forward(
     StructuredBufferStorage<float> layer1,
     StructuredBufferStorage<float> layer2, 
     StructuredBufferStorage<float> layer3,
     StructuredBufferStorage<float> layer4,
-    Vec4 input)
+    InputVec input)
 {
-    let ff1 = FeedForward<float, 4, 32, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff2 = FeedForward<float, 32, 32, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff3 = FeedForward<float, 32, 32, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff4 = FeedForward<float, 32, 4, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff1 = FeedForward<float, In, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff2 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff3 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff4 = FeedForward<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(0, {});
 
-    let x1 = ff1.eval<Vec4, Vec32>(layer1, input);
-    let x2 = ff2.eval<Vec32, Vec32>(layer2, x1);
-    let x3 = ff3.eval<Vec32, Vec32>(layer3, x2);
-    let output = ff4.eval<Vec32, Vec4>(layer4, x3);
+    let x1 = ff1.eval<InputVec, HiddenVec>(layer1, input);
+    let x2 = ff2.eval<HiddenVec, HiddenVec>(layer2, x1);
+    let x3 = ff3.eval<HiddenVec, HiddenVec>(layer3, x2);
+    let output = ff4.eval<HiddenVec, OutputVec>(layer4, x3);
 
     return output;
 }
@@ -64,7 +68,7 @@ void computeMain(uint3 thread_id : SV_DispatchThreadID)
     var dlayer3_pair = DifferentialPtrPair<StructuredBufferStorage<float>>(layer3, dlayer3);
     var dlayer4_pair = DifferentialPtrPair<StructuredBufferStorage<float>>(layer4, dlayer4);
 
-    bwd_diff(network_forward)(dlayer1_pair, dlayer2_pair, dlayer3_pair, dlayer4_pair, dinput, Vec4(1.0));
+    bwd_diff(network_forward)(dlayer1_pair, dlayer2_pair, dlayer3_pair, dlayer4_pair, dinput, OutputVec(1.0));
     
     globals.dinput[tid] = dinput.d;
 }

@@ -533,7 +533,7 @@ public struct ReLU<T> : IActivation<T>
         where Vector.Differential  == Vector
     {
         let d = dinput.p.step(T(0.0)).mul(doutput);
-        dinput = DifferentialPair<Vector>(dinput.p, d);
+        dinput = DifferentialPair<Vector>(dinput.p, d + __slang_noop_cast<Vector>(dinput.d));
     }
 }
 

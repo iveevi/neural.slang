@@ -9,12 +9,12 @@ from .conftest import assert_close, RANDOM_SEEDS
 # TODO: also parameterize activation functions with link-time specialization
 
 
-def create_sizes_module(device, in_size, out_size):
+def create_specialization_module(device, in_size, out_size):
     source = f"""
     export static const int In = {in_size};
     export static const int Out = {out_size};
     """
-    return device.load_module_from_source("sizes", source)
+    return device.load_module_from_source("specialization", source)
 
 
 def create_linear_layer_data(input_size, output_size, random_seed):
@@ -40,8 +40,8 @@ def test_feed_forward(device, make_kernel, random_seed, in_size, out_size):
     batch_size = 16
     linear_layer, parameters_data = create_linear_layer_data(in_size, out_size, random_seed)
     
-    sizes_module = create_sizes_module(device, in_size, out_size)
-    kernel = make_kernel("feed_forward", link_modules=[sizes_module])
+    specialization_module = create_specialization_module(device, in_size, out_size)
+    kernel = make_kernel("feed_forward", link_modules=[specialization_module])
     
     # Create input data (10 samples, in_size features each)
     input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
@@ -102,8 +102,8 @@ def test_feed_forward_derivative(device, make_kernel, random_seed, in_size, out_
     batch_size = 16
     linear_layer, parameters_data = create_linear_layer_data(in_size, out_size, random_seed)
     
-    sizes_module = create_sizes_module(device, in_size, out_size)
-    kernel = make_kernel("feed_forward_derivative", link_modules=[sizes_module])
+    specialization_module = create_specialization_module(device, in_size, out_size)
+    kernel = make_kernel("feed_forward_derivative", link_modules=[specialization_module])
     
     # Create input data (10 samples, 64 features each)
     input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1

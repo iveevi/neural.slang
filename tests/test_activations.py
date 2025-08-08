@@ -7,18 +7,28 @@ from .conftest import assert_close, RANDOM_SEEDS
 from .test_utils import create_buffer_for_data, create_output_buffer
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_vector_relu_2d(device, make_kernel, random_seed):
-    kernel = make_kernel("relu_vector")
+def create_specialization_module(device, in_size):
+    source = f"""
+    import neural;
+    export static const int In = {in_size};
+    """
+    return device.load_module_from_source("specialization", source)
 
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_relu(device, make_kernel, random_seed, in_size):
     np.random.seed(random_seed)
-    data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
+    batch_size = 16
+    data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("relu_vector", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_for_data(device, data, 64)
-    output_buffer = create_output_buffer(device, 10, 16)
+    input_buffer = create_buffer_for_data(device, data, 4 * in_size)
+    output_buffer = create_output_buffer(device, batch_size, in_size)
     
     kernel.dispatch(
-        thread_count=(10, 1, 1),
+        thread_count=(batch_size, 1, 1),
         vars={
             "globals": {
                 "input": input_buffer,
@@ -27,33 +37,27 @@ def test_vector_relu_2d(device, make_kernel, random_seed):
         },
     )
     
-    output = output_buffer.to_numpy().view(np.float32).reshape(10, 16)
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
     expected = np.where(data > 0, data, 0)
     
     assert_close(output, expected)
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_vector_relu_derivative(device, make_kernel, random_seed):
-    kernel = make_kernel("relu_derivative")
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_relu_derivative(device, make_kernel, random_seed, in_size):
     np.random.seed(random_seed)
-    data = 2 * np.random.rand(10, 2).astype(np.float32) - 1
+    batch_size = 16
+    data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("relu_derivative", link_modules=[specialization_module])
     
-    input_buffer = device.create_buffer(
-        size=data.nbytes,
-        struct_size=8,
-        usage=spy.BufferUsage.shader_resource,
-        data=data,
-    )
-    
-    output_buffer = device.create_buffer(
-        size=data.nbytes,
-        struct_size=8,
-        usage=spy.BufferUsage.shader_resource,
-    )
+    input_buffer = create_buffer_for_data(device, data, 4 * in_size)
+    output_buffer = create_output_buffer(device, batch_size, in_size)
     
     kernel.dispatch(
-        thread_count=(10, 1, 1),
+        thread_count=(batch_size, 1, 1),
         vars={
             "globals": {
                 "input": input_buffer,
@@ -62,7 +66,7 @@ def test_vector_relu_derivative(device, make_kernel, random_seed):
         },
     )
     
-    output = output_buffer.to_numpy().view(np.float32).reshape(10, 2)
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
     
     # Use PyTorch backward to compute ReLU derivative
     input_torch = torch.tensor(data, requires_grad=True)

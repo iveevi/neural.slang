@@ -9,19 +9,27 @@ from .test_utils import (
 )
 
 
-def create_network_layers(random_seed):
+def create_specialization_module(device, in_size, hidden_size, out_size):
+    source = f"""
+    export static const int In = {in_size};
+    export static const int Hidden = {hidden_size};
+    export static const int Out = {out_size};
+    """
+    return device.load_module_from_source("specialization", source)
+
+
+def create_network_layers(random_seed, in_size, hidden_size, out_size):
     """Create PyTorch network layers and extract their parameters."""
     torch.manual_seed(random_seed)
     
-    # Create the neural network (4 -> 32 -> 32 -> 32 -> 4)
     network = torch.nn.Sequential(
-        torch.nn.Linear(4, 32),
+        torch.nn.Linear(in_size, hidden_size),
         torch.nn.ReLU(),
-        torch.nn.Linear(32, 32), 
+        torch.nn.Linear(hidden_size, hidden_size), 
         torch.nn.ReLU(),
-        torch.nn.Linear(32, 32),
+        torch.nn.Linear(hidden_size, hidden_size),
         torch.nn.ReLU(),
-        torch.nn.Linear(32, 4),
+        torch.nn.Linear(hidden_size, out_size),
         torch.nn.ReLU()
     )
     
@@ -45,22 +53,28 @@ def create_network_layers(random_seed):
     return network, layer1_params, layer2_params, layer3_params, layer4_params
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_network_without_encoding(device, make_kernel, random_seed):
-    """Test the 4→32→32→32→4 network without encoding using nn.Linear layers."""
-    kernel = make_kernel("network_without_encoding")
-    
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64])
+@pytest.mark.parametrize("hidden_size", [16, 32, 64])
+@pytest.mark.parametrize("out_size", [16, 32, 64])
+def test_network_without_encoding(device, make_kernel, random_seed, in_size, hidden_size, out_size):
+    np.random.seed(random_seed)
+
     # Create network and parameters
-    network, layer1_params, layer2_params, layer3_params, layer4_params = create_network_layers(random_seed)
+    result = create_network_layers(random_seed, in_size, hidden_size, out_size)
+    network, layer1_params, layer2_params, layer3_params, layer4_params = result
     
     # Generate completely random test inputs
-    np.random.seed(random_seed)
     batch_size = 64
-    test_inputs = (np.random.rand(batch_size, 4).astype(np.float32) - 0.5) * 2.0  # Random values in [-1, 1]
+    test_inputs = (np.random.rand(batch_size, in_size).astype(np.float32) - 0.5) * 2.0
+    
+    specialization_module = create_specialization_module(device, in_size, hidden_size, out_size)
+    kernel = make_kernel("network_without_encoding", link_modules=[specialization_module])
     
     # Create buffers
-    input_buffer = create_buffer_for_data(device, test_inputs, 4 * 4)
-    output_buffer = create_output_buffer(device, batch_size, 4)
+    input_buffer = create_buffer_for_data(device, test_inputs, 4 * in_size)
+    output_buffer = create_output_buffer(device, batch_size, out_size)
+    
     layer1_buffer = create_buffer_for_data(device, layer1_params, 4)
     layer2_buffer = create_buffer_for_data(device, layer2_params, 4)
     layer3_buffer = create_buffer_for_data(device, layer3_params, 4)
@@ -82,7 +96,7 @@ def test_network_without_encoding(device, make_kernel, random_seed):
     )
     
     # Get results
-    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, 4)
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, out_size)
     
     # Compute expected result using nn.Sequential with nn.Linear layers
     input_torch = torch.tensor(test_inputs)
@@ -93,22 +107,27 @@ def test_network_without_encoding(device, make_kernel, random_seed):
     assert_close(output, expected)
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_network_without_encoding_derivative(device, make_kernel, random_seed):
-    """Test network derivatives against PyTorch autograd using nn.Linear layers."""
-    kernel = make_kernel("network_without_encoding_derivative")
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64])
+@pytest.mark.parametrize("hidden_size", [16, 32, 64])
+@pytest.mark.parametrize("out_size", [16, 32, 64])
+def test_network_without_encoding_derivative(device, make_kernel, random_seed, in_size, hidden_size, out_size):
+    np.random.seed(random_seed)
     
     # Create network and parameters
-    network, layer1_params, layer2_params, layer3_params, layer4_params = create_network_layers(random_seed)
+    result = create_network_layers(random_seed, in_size, hidden_size, out_size)
+    network, layer1_params, layer2_params, layer3_params, layer4_params = result
     
     # Generate completely random test inputs for gradient testing
-    np.random.seed(random_seed)
     batch_size = 64
-    test_inputs = (np.random.rand(batch_size, 4).astype(np.float32) - 0.5) * 1.0  # Random values in [-0.5, 0.5]
+    test_inputs = (np.random.rand(batch_size, in_size).astype(np.float32) - 0.5) * 1.0  # Random values in [-0.5, 0.5]
+
+    specialization_module = create_specialization_module(device, in_size, hidden_size, out_size)
+    kernel = make_kernel("network_without_encoding_derivative", link_modules=[specialization_module])
     
     # Create input buffers
-    input_buffer = create_buffer_for_data(device, test_inputs, 4 * 4)
-    dinput_buffer = create_output_buffer(device, batch_size, 4)
+    input_buffer = create_buffer_for_data(device, test_inputs, 4 * in_size)
+    dinput_buffer = create_output_buffer(device, batch_size, in_size)
     
     # Create parameter buffers
     layer1_buffer = create_buffer_for_data(device, layer1_params, 4)
@@ -142,7 +161,7 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed):
     )
     
     # Get derivative results
-    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(batch_size, 4)
+    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
     layer1_derivatives = dlayer1_buffer.to_numpy().view(np.float32).reshape(layer1_params.shape)
     layer2_derivatives = dlayer2_buffer.to_numpy().view(np.float32).reshape(layer2_params.shape)
     layer3_derivatives = dlayer3_buffer.to_numpy().view(np.float32).reshape(layer3_params.shape)

@@ -1,22 +1,23 @@
 import neural;
 
-typealias Vec16 = InlineVector<float, 16>;
+extern static const int In;
 
-// ReLU for vector of 16 elements
-struct VectorReLUGlobals
+typealias Vec = InlineVector<float, In>;
+
+// ReLU for vector of In elements
+struct ReLUGlobals
 {
-    RWStructuredBuffer<Vec16> input;
-    RWStructuredBuffer<Vec16> output;
+    RWStructuredBuffer<Vec> input;
+    RWStructuredBuffer<Vec> output;
 }
 
-ParameterBlock<VectorReLUGlobals> globals;
+ParameterBlock<ReLUGlobals> globals;
 
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
-    var activation = ReLU<float>();
     var input = globals.input[tid];
-    var output = activation.eval(input);
-    globals.output[tid] = Vec16(output);
+    var output = ReLU<float>().eval(input);
+    globals.output[tid] = output;
 }

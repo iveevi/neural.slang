@@ -22,12 +22,7 @@ void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     let tid = thread_id.x;
     let storage = StructuredBufferStorage<float>(globals.parameters);
-    let network = FeedForward<
-        float,
-        In, Out,
-        StructuredBufferStorage<float>,
-        ReLU<float>
-    >(0u, ReLU<float>());
+    let network = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>(0u, {});
     let input = InputVec(globals.input[tid]);
     let output = network.eval<InputVec, OutputVec>(storage, input);
     globals.output[tid] = output;
