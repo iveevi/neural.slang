@@ -9,7 +9,7 @@ import numpy as np
 RANDOM_SEEDS = [42, 123, 456, 789, 999]
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def device():
     return spy.create_device(
         include_paths=[
@@ -20,17 +20,17 @@ def device():
 
 @pytest.fixture
 def make_kernel(device):
-    def _make_kernel(shader_name):
-        # Auto-add .slang extension if not present
+    def _make_kernel(shader_name, link_modules=[]):
         if not shader_name.endswith('.slang'):
             shader_file = f"tests/{shader_name}.slang"
         else:
             shader_file = f"tests/{shader_name}"
         
-        # Always load the "computeMain" entry point
-        program = device.load_program(
-            shader_file,
-            entry_point_names=["computeMain"],
+        main_module = device.load_module(shader_file)
+        entry_point = main_module.entry_point("computeMain")
+        program = device.link_program(
+            modules=[main_module] + link_modules,
+            entry_points=[entry_point],
         )
         return device.create_compute_kernel(program)
     return _make_kernel

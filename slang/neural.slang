@@ -175,6 +175,8 @@ public struct InlineVector<T, int N> : IVector<T, N>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int Dimension = N;
+
     public typealias Differential = This;
 
     internal T[N] data;
@@ -417,7 +419,6 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     where T : IArithmeticAtomicable
 {
     [BackwardDerivative(applyBwd)]
-    // [BackwardDifferentiable]
     public OutputVector apply<int OutputSize, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address)
@@ -429,17 +430,15 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         var output = OutputVector(T(0.0));
 
         // Matrix multiplication
-        [MaxIters(OutputSize)]
         for (int i = 0; i < OutputSize; i++)
         {
             let biasOffset = Storage.getOffset(address, N * OutputSize + i);
             var sum = storage.read(biasOffset);
 
-            [MaxIters(N)]
             for (int j = 0; j < N; j++)
             {
                 let elementOffset = Storage.getOffset(address, j * OutputSize + i);
-                sum += this[j] * storage.read(elementOffset);
+                sum += data[j] * storage.read(elementOffset);
             }
 
             output[i] = sum;

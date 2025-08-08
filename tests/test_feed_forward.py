@@ -6,8 +6,18 @@ import slangpy as spy
 from .conftest import assert_close, RANDOM_SEEDS
 
 
+# TODO: also parameterize activation functions with link-time specialization
+
+
+def create_sizes_module(device, in_size, out_size):
+    source = f"""
+    export static const int In = {in_size};
+    export static const int Out = {out_size};
+    """
+    return device.load_module_from_source("sizes", source)
+
+
 def create_linear_layer_data(input_size, output_size, random_seed):
-    """Create a PyTorch linear layer and extract its parameters."""
     torch.manual_seed(random_seed)
     
     linear_layer = torch.nn.Linear(input_size, output_size)
@@ -17,32 +27,36 @@ def create_linear_layer_data(input_size, output_size, random_seed):
     bias_data = linear_layer.bias.detach().numpy().reshape(1, -1)
     parameters_data = np.ascontiguousarray(np.concatenate((weights_data, bias_data), axis=0).astype(np.float32))
     
-    return linear_layer, weights_data, bias_data, parameters_data
+    return linear_layer, parameters_data
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_feed_forward_basic(device, make_kernel, random_seed):
-    """Test feed forward layer using nn.Linear."""
-    kernel = make_kernel("feed_forward")
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [32, 64, 128])
+@pytest.mark.parametrize("out_size", [32, 64, 128])
+def test_feed_forward(device, make_kernel, random_seed, in_size, out_size):
     np.random.seed(random_seed)
     
     # Create linear layer and parameters
-    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(128, 64, random_seed)
+    batch_size = 16
+    linear_layer, parameters_data = create_linear_layer_data(in_size, out_size, random_seed)
     
-    # Create input data (10 samples, 128 features each)
-    input_data = 2 * np.random.rand(10, 128).astype(np.float32) - 1
+    sizes_module = create_sizes_module(device, in_size, out_size)
+    kernel = make_kernel("feed_forward", link_modules=[sizes_module])
+    
+    # Create input data (10 samples, in_size features each)
+    input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
     
     # Create buffers
     input_buffer = device.create_buffer(
         size=input_data.nbytes,
-        struct_size=128 * 4,
+        struct_size=in_size * 4,
         usage=spy.BufferUsage.shader_resource,
         data=input_data,
     )
     
     output_buffer = device.create_buffer(
-        size=10 * 64 * 4,
-        struct_size=64 * 4,
+        size=batch_size * out_size * 4,
+        struct_size=out_size * 4,
         usage=spy.BufferUsage.shader_resource,
     )
     
@@ -55,7 +69,7 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     
     # Dispatch kernel
     kernel.dispatch(
-        thread_count=(10, 1, 1),
+        thread_count=(batch_size, 1, 1),
         vars={
             "globals": {
                 "parameters": parameters_buffer,
@@ -66,7 +80,7 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     )
     
     # Get results
-    output = output_buffer.to_numpy().view(np.float32).reshape(10, 64)
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, out_size)
     
     # Compute expected result using the created linear layer
     input_torch = torch.tensor(input_data)
@@ -78,22 +92,26 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     assert_close(output, expected)
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_feed_forward_derivative(device, make_kernel, random_seed):
-    """Test FeedForward derivatives against PyTorch autograd using nn.Linear."""
-    kernel = make_kernel("feed_forward_derivative")
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [32, 64, 128])
+@pytest.mark.parametrize("out_size", [32, 64, 128])
+def test_feed_forward_derivative(device, make_kernel, random_seed, in_size, out_size):
     np.random.seed(random_seed)
     
     # Create linear layer and parameters
-    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(128, 64, random_seed)
+    batch_size = 16
+    linear_layer, parameters_data = create_linear_layer_data(in_size, out_size, random_seed)
     
-    # Create input data (10 samples, 128 features each)
-    input_data = 2 * np.random.rand(10, 128).astype(np.float32) - 1
+    sizes_module = create_sizes_module(device, in_size, out_size)
+    kernel = make_kernel("feed_forward_derivative", link_modules=[sizes_module])
+    
+    # Create input data (10 samples, 64 features each)
+    input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
     
     # Create buffers
     input_buffer = device.create_buffer(
         size=input_data.nbytes,
-        struct_size=128 * 4,
+        struct_size=in_size * 4,
         usage=spy.BufferUsage.shader_resource,
         data=input_data,
     )
@@ -101,7 +119,7 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     # Buffer for input gradients (same size as input)
     dinput_buffer = device.create_buffer(
         size=input_data.nbytes,
-        struct_size=128 * 4,
+        struct_size=in_size * 4,
         usage=spy.BufferUsage.shader_resource,
         data=np.zeros_like(input_data),
     )
@@ -123,7 +141,7 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     
     # Dispatch kernel
     kernel.dispatch(
-        thread_count=(10, 1, 1),
+        thread_count=(batch_size, 1, 1),
         vars={
             "globals": {
                 "input": input_buffer,
@@ -135,7 +153,7 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     )
     
     # Get derivative results
-    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(10, 128)
+    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
     parameter_derivatives = dparameters_buffer.to_numpy().view(np.float32).reshape(parameters_data.shape)
     
     # Compute expected derivatives using PyTorch autograd with the created linear layer
