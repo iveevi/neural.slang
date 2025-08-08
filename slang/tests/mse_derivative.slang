@@ -1,22 +1,24 @@
 import neural;
 
-// MSE derivative for vector of 16 elements
-typealias Vec16 = InlineVector<float, 16>;
+extern static const int In;
 
+typealias Vec = InlineVector<float, In>;
+
+// MSE derivative for vector of In elements
 struct MSEDerivativeGlobals
 {
-    RWStructuredBuffer<Vec16> predicted;
-    RWStructuredBuffer<Vec16> expected;
-    RWStructuredBuffer<Vec16> output;
+    RWStructuredBuffer<Vec> predicted;
+    RWStructuredBuffer<Vec> expected;
+    RWStructuredBuffer<Vec> output;
 }
 
 ParameterBlock<MSEDerivativeGlobals> globals;
 
 [BackwardDifferentiable]
-float eval_mse(Vec16 predicted, no_diff Vec16 expected)
+float eval_mse(Vec predicted, no_diff Vec expected)
 {
     static let mse_loss = MeanSquaredError<float>();
-    return mse_loss.eval<16, Vec16>(predicted, expected);
+    return mse_loss.eval<In, Vec>(predicted, expected);
 }
 
 [shader("compute")]

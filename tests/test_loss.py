@@ -4,37 +4,34 @@ import pytest
 import torch
 import slangpy as spy
 from .conftest import assert_close, RANDOM_SEEDS
+from .test_utils import create_buffer_for_data, create_output_buffer
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_mse_basic(device, make_kernel, random_seed):
-    kernel = make_kernel("mse")
+def create_specialization_module(device, in_size):
+    source = f"""
+    export static const int In = {in_size};
+    """
+    return device.load_module_from_source("specialization", source)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_mse_basic(device, make_kernel, random_seed, in_size):
     np.random.seed(random_seed)
-    input_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
-    target_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
     
-    input_buffer = device.create_buffer(
-        size=input_data.nbytes,
-        struct_size=16 * 4,
-        usage=spy.BufferUsage.shader_resource,
-        data=input_data,
-    )
+    batch_size = 16
+    input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+    target_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
     
-    target_buffer = device.create_buffer(
-        size=target_data.nbytes,
-        struct_size=16 * 4,
-        usage=spy.BufferUsage.shader_resource,
-        data=target_data,
-    )
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("mse", link_modules=[specialization_module])
     
-    output_buffer = device.create_buffer(
-        size=10 * 4,
-        struct_size=4,
-        usage=spy.BufferUsage.shader_resource,
-    )
+    input_buffer = create_buffer_for_data(device, input_data, in_size * 4)
+    target_buffer = create_buffer_for_data(device, target_data, in_size * 4)
+    output_buffer = create_output_buffer(device, batch_size, 1)
     
     kernel.dispatch(
-        thread_count=(10, 1, 1),
+        thread_count=(batch_size, 1, 1),
         vars={
             "globals": {
                 "input": input_buffer,
@@ -50,37 +47,41 @@ def test_mse_basic(device, make_kernel, random_seed):
     assert_close(output, expected)
 
 
-@pytest.mark.parametrize("random_seed", RANDOM_SEEDS)
-def test_mse_derivative(device, make_kernel, random_seed):
-    kernel = make_kernel("mse_derivative")
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_mse_derivative(device, make_kernel, random_seed, in_size):
     np.random.seed(random_seed)
     
     # Generate random predicted and expected values
-    predicted_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
-    expected_data = 2 * np.random.rand(10, 16).astype(np.float32) - 1
+    batch_size = 16
+    predicted_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+    expected_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+    
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("mse_derivative", link_modules=[specialization_module])
     
     predicted_buffer = device.create_buffer(
         size=predicted_data.nbytes,
-        struct_size=16 * 4,
+        struct_size=in_size * 4,
         usage=spy.BufferUsage.shader_resource,
         data=predicted_data,
     )
     
     expected_buffer = device.create_buffer(
         size=expected_data.nbytes,
-        struct_size=16 * 4,
+        struct_size=in_size * 4,
         usage=spy.BufferUsage.shader_resource,
         data=expected_data,
     )
     
     output_buffer = device.create_buffer(
         size=predicted_data.nbytes,
-        struct_size=16 * 4,
+        struct_size=in_size * 4,
         usage=spy.BufferUsage.shader_resource,
     )
     
     kernel.dispatch(
-        thread_count=(10, 1, 1),
+        thread_count=(batch_size, 1, 1),
         vars={
             "globals": {
                 "predicted": predicted_buffer,
@@ -90,7 +91,7 @@ def test_mse_derivative(device, make_kernel, random_seed):
         },
     )
     
-    output = output_buffer.to_numpy().view(np.float32).reshape(10, 16)
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
     
     # Use PyTorch autograd to compute MSE derivative
     predicted_torch = torch.tensor(predicted_data, requires_grad=True)

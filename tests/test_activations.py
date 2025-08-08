@@ -22,7 +22,7 @@ def test_relu(device, make_kernel, random_seed, in_size):
     data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
 
     specialization_module = create_specialization_module(device, in_size)
-    kernel = make_kernel("relu_vector", link_modules=[specialization_module])
+    kernel = make_kernel("relu", link_modules=[specialization_module])
     
     input_buffer = create_buffer_for_data(device, data, 4 * in_size)
     output_buffer = create_output_buffer(device, batch_size, in_size)

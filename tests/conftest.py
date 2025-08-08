@@ -12,6 +12,8 @@ RANDOM_SEEDS = [42, 123, 456, 789, 999]
 @pytest.fixture(scope="function")
 def device():
     return spy.create_device(
+        spy.DeviceType.vulkan,
+        enable_debug_layers=True,
         include_paths=[
             pathlib.Path(__file__).parent.parent.absolute() / "slang",
         ],

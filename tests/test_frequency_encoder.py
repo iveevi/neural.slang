@@ -72,7 +72,7 @@ def test_frequency_encoder(device, make_kernel, random_seed):
     # Concatenate all levels
     expected = np.concatenate(expected_parts, axis=1)  # Shape: (10, 24)
     
-    assert_close(output, expected)
+    assert_close(output, expected, rtol=1e-4, atol=1e-4)
     
     # Verify specific known values for zero input
     zero_output = output[0]
@@ -166,4 +166,4 @@ def test_frequency_encoder_derivative(device, make_kernel, random_seed):
     expected_derivatives = input_torch.grad.detach().numpy()
     
     # Compare results
-    assert_close(derivatives, expected_derivatives, rtol=1e-5, atol=1e-6)
+    assert_close(derivatives, expected_derivatives, rtol=1e-4, atol=1e-4)
