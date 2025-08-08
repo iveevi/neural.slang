@@ -1,13 +1,13 @@
 import neural;
 
-typealias Vec4 = InlineVector<float, 4>;
-typealias Vec8 = InlineVector<float, 8>;
+typealias Vec128 = InlineVector<float, 128>;
+typealias Vec64 = InlineVector<float, 64>;
 
 // Single feed forward layer
 struct FeedForwardGlobals
 {
-    RWStructuredBuffer<Vec4> input;
-    RWStructuredBuffer<Vec4> dinput;
+    RWStructuredBuffer<Vec128> input;
+    RWStructuredBuffer<Vec128> dinput;
     
     RWStructuredBuffer<float> parameters;
     RWStructuredBuffer<float> dparameters;
@@ -16,10 +16,10 @@ struct FeedForwardGlobals
 ParameterBlock<FeedForwardGlobals> globals;
 
 [BackwardDifferentiable]
-Vec8 feed_forward(StructuredBufferStorage<float> parameters, Vec4 input)
+Vec64 feed_forward(StructuredBufferStorage<float> parameters, Vec128 input)
 {
-    var network = FeedForward<float, 4, 8, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    return network.eval<Vec4, Vec8>(parameters, input);
+    var network = FeedForward<float, 128, 64, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    return network.eval<Vec128, Vec64>(parameters, input);
 }
 
 [shader("compute")]
@@ -30,6 +30,6 @@ void computeMain(uint3 thread_id : SV_DispatchThreadID)
     let dparameters = StructuredBufferStorage<float>(globals.dparameters);
     var dinput = diffPair(globals.input[tid]);
     var dff = DifferentialPtrPair<StructuredBufferStorage<float>>(parameters, dparameters);
-    bwd_diff(feed_forward)(dff, dinput, Vec8(1.0));
+    bwd_diff(feed_forward)(dff, dinput, Vec64(1.0));
     globals.dinput[tid] = dinput.d;
 }

@@ -27,22 +27,22 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     np.random.seed(random_seed)
     
     # Create linear layer and parameters
-    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(4, 8, random_seed)
+    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(128, 64, random_seed)
     
-    # Create input data (10 samples, 4 features each)
-    input_data = 2 * np.random.rand(10, 4).astype(np.float32) - 1
+    # Create input data (10 samples, 128 features each)
+    input_data = 2 * np.random.rand(10, 128).astype(np.float32) - 1
     
     # Create buffers
     input_buffer = device.create_buffer(
         size=input_data.nbytes,
-        struct_size=4 * 4,
+        struct_size=128 * 4,
         usage=spy.BufferUsage.shader_resource,
         data=input_data,
     )
     
     output_buffer = device.create_buffer(
-        size=10 * 8 * 4,
-        struct_size=8 * 4,
+        size=10 * 64 * 4,
+        struct_size=64 * 4,
         usage=spy.BufferUsage.shader_resource,
     )
     
@@ -66,7 +66,7 @@ def test_feed_forward_basic(device, make_kernel, random_seed):
     )
     
     # Get results
-    output = output_buffer.to_numpy().view(np.float32).reshape(10, 8)
+    output = output_buffer.to_numpy().view(np.float32).reshape(10, 64)
     
     # Compute expected result using the created linear layer
     input_torch = torch.tensor(input_data)
@@ -85,15 +85,15 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     np.random.seed(random_seed)
     
     # Create linear layer and parameters
-    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(4, 8, random_seed)
+    linear_layer, weights_data, bias_data, parameters_data = create_linear_layer_data(128, 64, random_seed)
     
-    # Create input data (10 samples, 4 features each)
-    input_data = 2 * np.random.rand(10, 4).astype(np.float32) - 1
+    # Create input data (10 samples, 128 features each)
+    input_data = 2 * np.random.rand(10, 128).astype(np.float32) - 1
     
     # Create buffers
     input_buffer = device.create_buffer(
         size=input_data.nbytes,
-        struct_size=4 * 4,
+        struct_size=128 * 4,
         usage=spy.BufferUsage.shader_resource,
         data=input_data,
     )
@@ -101,8 +101,9 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     # Buffer for input gradients (same size as input)
     dinput_buffer = device.create_buffer(
         size=input_data.nbytes,
-        struct_size=4 * 4,
+        struct_size=128 * 4,
         usage=spy.BufferUsage.shader_resource,
+        data=np.zeros_like(input_data),
     )
     
     parameters_buffer = device.create_buffer(
@@ -117,6 +118,7 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
         size=parameters_data.nbytes,
         struct_size=4,
         usage=spy.BufferUsage.shader_resource,
+        data=np.zeros_like(parameters_data),
     )
     
     # Dispatch kernel
@@ -133,7 +135,7 @@ def test_feed_forward_derivative(device, make_kernel, random_seed):
     )
     
     # Get derivative results
-    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(10, 4)
+    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(10, 128)
     parameter_derivatives = dparameters_buffer.to_numpy().view(np.float32).reshape(parameters_data.shape)
     
     # Compute expected derivatives using PyTorch autograd with the created linear layer
