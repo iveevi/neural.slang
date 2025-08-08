@@ -14,6 +14,7 @@ def create_specialization_module(device, in_size):
     """
     return device.load_module_from_source("specialization", source)
 
+
 @pytest.mark.parametrize("random_seed", [0])
 @pytest.mark.parametrize("in_size", [16, 32, 64, 128])
 def test_relu(device, make_kernel, random_seed, in_size):

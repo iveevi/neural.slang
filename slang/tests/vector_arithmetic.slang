@@ -1,16 +1,18 @@
 import neural;
 
-typealias Vec4 = InlineVector<float, 4>;
+extern static const int In;
 
-// Vector arithmetic operations for 4-element vectors
+typealias Vec = InlineVector<float, In>;
+
+// Vector arithmetic operations for In-element vectors
 struct VectorArithmeticGlobals
 {
-    RWStructuredBuffer<Vec4> input_a;
-    RWStructuredBuffer<Vec4> input_b;
-    RWStructuredBuffer<Vec4> output_add;
-    RWStructuredBuffer<Vec4> output_sub;
-    RWStructuredBuffer<Vec4> output_mul;
-    RWStructuredBuffer<Vec4> output_div;
+    RWStructuredBuffer<Vec> input_a;
+    RWStructuredBuffer<Vec> input_b;
+    RWStructuredBuffer<Vec> output_add;
+    RWStructuredBuffer<Vec> output_sub;
+    RWStructuredBuffer<Vec> output_mul;
+    RWStructuredBuffer<Vec> output_div;
 }
 
 ParameterBlock<VectorArithmeticGlobals> globals;
