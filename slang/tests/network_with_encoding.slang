@@ -1,21 +1,27 @@
 import neural;
 
-// Type aliases
-typealias Vec3 = InlineVector<float, 3>;
-typealias Vec24 = InlineVector<float, 24>;  // FrequencyEncoder<float, 3, 4> outputs 2*4*3=24 dims
-typealias Vec32 = InlineVector<float, 32>;
-typealias Vec4 = InlineVector<float, 4>;
+extern static const int In;
+extern static const int Hidden;
+extern static const int Levels;
+extern static const int Out;
 
-// Network with frequency encoding: 3 -> [FrequencyEncoder] -> 24 -> 32 -> 32 -> 32 -> 4
+static const int Encoded = 2 * Levels * In;
+
+typealias InputVec = InlineVector<float, In>;
+typealias OutputVec = InlineVector<float, Out>;
+typealias HiddenVec = InlineVector<float, Hidden>;
+typealias EncodedVec = InlineVector<float, Encoded>;
+
+// Network with frequency encoding: In -> [FrequencyEncoder] -> Encoded -> Hidden -> Hidden -> Hidden -> Out
 struct NetworkWithEncodingGlobals
 {
-    RWStructuredBuffer<Vec3> input;
-    RWStructuredBuffer<Vec4> output;
+    RWStructuredBuffer<InputVec> input;
+    RWStructuredBuffer<OutputVec> output;
     
-    RWStructuredBuffer<float> layer1;  // 24 -> 32
-    RWStructuredBuffer<float> layer2;  // 32 -> 32  
-    RWStructuredBuffer<float> layer3;  // 32 -> 32
-    RWStructuredBuffer<float> layer4;  // 32 -> 4
+    RWStructuredBuffer<float> layer1;  // Encoded -> Hidden
+    RWStructuredBuffer<float> layer2;  // Hidden -> Hidden  
+    RWStructuredBuffer<float> layer3;  // Hidden -> Hidden
+    RWStructuredBuffer<float> layer4;  // Hidden -> Out
 }
 
 ParameterBlock<NetworkWithEncodingGlobals> globals;
@@ -30,25 +36,21 @@ void computeMain(uint3 thread_id : SV_DispatchThreadID)
     let layer3 = StructuredBufferStorage<float>(globals.layer3);
     let layer4 = StructuredBufferStorage<float>(globals.layer4);
 
-    // Create frequency encoder (3D input, 4 levels -> 24D output)
-    let encoder = FrequencyEncoder<float, 3, 4>();
+    let encoder = FrequencyEncoder<float, In, Levels>();
     
-    // Create feed forward layers
-    let ff1 = FeedForward<float, 24, 32, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff2 = FeedForward<float, 32, 32, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff3 = FeedForward<float, 32, 32, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff4 = FeedForward<float, 32, 4, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff1 = FeedForward<float, Encoded, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff2 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff3 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff4 = FeedForward<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(0, {});
 
-    let input = Vec3(globals.input[tid]);
+    let input = InputVec(globals.input[tid]);
 
-    // Apply frequency encoding
-    let encoded = encoder.eval<Vec3, Vec24>(input);
+    let encoded = encoder.eval<InputVec, EncodedVec>(input);
     
-    // Pass through neural network layers
-    let x1 = ff1.eval<Vec24, Vec32>(layer1, encoded);
-    let x2 = ff2.eval<Vec32, Vec32>(layer2, x1);
-    let x3 = ff3.eval<Vec32, Vec32>(layer3, x2);
-    let output = ff4.eval<Vec32, Vec4>(layer4, x3);
+    let x1 = ff1.eval<EncodedVec, HiddenVec>(layer1, encoded);
+    let x2 = ff2.eval<HiddenVec, HiddenVec>(layer2, x1);
+    let x3 = ff3.eval<HiddenVec, HiddenVec>(layer3, x2);
+    let output = ff4.eval<HiddenVec, OutputVec>(layer4, x3);
 
     globals.output[tid] = output;
 }

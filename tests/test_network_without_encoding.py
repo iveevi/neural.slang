@@ -3,10 +3,7 @@ import pytest
 import slangpy as spy
 import torch
 from .conftest import assert_close, RANDOM_SEEDS
-from .test_utils import (
-    create_buffer_for_data,
-    create_output_buffer
-)
+from .test_utils import create_buffer_for_data, create_output_buffer
 
 
 def create_specialization_module(device, in_size, hidden_size, out_size):
@@ -60,18 +57,15 @@ def create_network_layers(random_seed, in_size, hidden_size, out_size):
 def test_network_without_encoding(device, make_kernel, random_seed, in_size, hidden_size, out_size):
     np.random.seed(random_seed)
 
-    # Create network and parameters
     result = create_network_layers(random_seed, in_size, hidden_size, out_size)
     network, layer1_params, layer2_params, layer3_params, layer4_params = result
     
-    # Generate completely random test inputs
     batch_size = 64
     test_inputs = (np.random.rand(batch_size, in_size).astype(np.float32) - 0.5) * 2.0
     
     specialization_module = create_specialization_module(device, in_size, hidden_size, out_size)
     kernel = make_kernel("network_without_encoding", link_modules=[specialization_module])
     
-    # Create buffers
     input_buffer = create_buffer_for_data(device, test_inputs, 4 * in_size)
     output_buffer = create_output_buffer(device, batch_size, out_size)
     
@@ -80,7 +74,6 @@ def test_network_without_encoding(device, make_kernel, random_seed, in_size, hid
     layer3_buffer = create_buffer_for_data(device, layer3_params, 4)
     layer4_buffer = create_buffer_for_data(device, layer4_params, 4)
     
-    # Run kernel
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
         vars={
@@ -95,13 +88,8 @@ def test_network_without_encoding(device, make_kernel, random_seed, in_size, hid
         },
     )
     
-    # Get results
     output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, out_size)
-    
-    # Compute expected result using nn.Sequential with nn.Linear layers
     input_torch = torch.tensor(test_inputs)
-    
-    # Compute expected output
     expected = network(input_torch).detach().numpy()
     
     assert_close(output, expected)
