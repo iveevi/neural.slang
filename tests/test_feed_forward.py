@@ -1,9 +1,8 @@
-
 import numpy as np
 import pytest
-import torch
 import slangpy as spy
-from .conftest import assert_close, RANDOM_SEEDS
+import torch
+from .conftest import assert_close
 
 
 # TODO: also parameterize activation functions with link-time specialization

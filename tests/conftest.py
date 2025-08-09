@@ -4,8 +4,7 @@ import slangpy as spy
 import numpy as np
 
 
-# Random seeds for parametrized tests that use random data
-RANDOM_SEEDS = [42, 123, 456, 789, 999]
+HERE = pathlib.Path(__file__).parent.parent.absolute()
 
 
 @pytest.fixture(scope="function")
@@ -14,7 +13,8 @@ def device():
         spy.DeviceType.vulkan,
         enable_debug_layers=True,
         include_paths=[
-            pathlib.Path(__file__).parent.parent.absolute() / "slang",
+            HERE / "slang",
+            HERE / "slang" / "neural",
         ],
     )
     try:
@@ -94,5 +94,4 @@ def assert_close(actual, expected, rtol=1e-5, atol=1e-6):
     assert is_close, f"Arrays differ by more than tolerance (max_diff={max_diff}, total_error={error})"
 
 
-# Export the helper function and constants so tests can import them
-__all__ = ['assert_close', 'RANDOM_SEEDS']
+__all__ = ['assert_close']

@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
-import slangpy as spy
 import torch
-from .conftest import assert_close, RANDOM_SEEDS
+from .conftest import assert_close
 from .test_utils import create_buffer_for_data, create_output_buffer
 
 

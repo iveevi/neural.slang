@@ -16,7 +16,7 @@ HERE = pathlib.Path(__file__).parent.parent.absolute()
 
 def generate_random_signal(length: int) -> np.ndarray:
     signal = 2 * np.random.rand(length) - 1
-    signal = gaussian_filter1d(signal, sigma=10)
+    signal = gaussian_filter1d(signal, sigma=2)
     return signal
 
 
@@ -195,7 +195,7 @@ def main():
         spy.DeviceType.vulkan,
         enable_debug_layers=True,
         include_paths=[
-            HERE / "slang",
+            HERE / "slang" / "neural",
         ],
     )
 

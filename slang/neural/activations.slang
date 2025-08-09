@@ -1,0 +1,77 @@
+implementing neural;
+
+//////////////
+// Identity //
+//////////////
+
+public struct Identity<T> : IActivation<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
+{
+    [NoDiffThis, BackwardDifferentiable]
+    public Vector eval<int N, Vector>(Vector input)
+        where Vector : IVector<T, N>
+        where Vector.Differential == Vector
+    {
+        return input;
+    }
+}
+
+//////////
+// ReLU //
+//////////
+
+public struct ReLU<T> : IActivation<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
+{
+    [NoDiffThis, BackwardDerivative(evalBwd)]
+    public Vector eval<int N, Vector>(Vector input)
+        where Vector : IVector<T, N>
+        where Vector.Differential == Vector
+    {
+        return input.max(T(0.0));
+    }
+
+    void evalBwd<int N, Vector>(inout DifferentialPair<Vector> dinput, Vector.Differential doutput)
+        where Vector : IVector<T, N>
+        where Vector.Differential  == Vector
+    {
+        let d = dinput.p.step(T(0.0)).mul(doutput);
+        dinput = DifferentialPair<Vector>(dinput.p, d + __slang_noop_cast<Vector>(dinput.d));
+    }
+}
+
+////////////////
+// Leaky ReLU //
+////////////////
+
+public struct LeakyReLU<T> : IActivation<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
+{
+    T alpha;
+
+    public __init(T alpha)
+    {
+        this.alpha = alpha;
+    }
+
+    [NoDiffThis, BackwardDerivative(evalBwd)]
+    public Vector eval<int N, Vector>(Vector input)
+        where Vector : IVector<T, N>
+        where Vector.Differential == Vector
+    {
+        return input.max(input.mul(Vector(alpha)));
+    }
+
+    void evalBwd<int N, Vector>(inout DifferentialPair<Vector> dinput, Vector.Differential doutput)
+        where Vector : IVector<T, N>
+        where Vector.Differential == Vector
+    {
+        let positive = dinput.p.step(T(0.0));
+        let negative = dinput.p.neg().step(T(0.0)).mul(Vector(alpha));
+        let d = positive.mul(doutput) + negative.mul(doutput);
+        dinput = DifferentialPair<Vector>(dinput.p, d);
+    }
+}
