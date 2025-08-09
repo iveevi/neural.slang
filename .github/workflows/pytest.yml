@@ -1,0 +1,63 @@
+name: PyTest
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          pkg-config \
+          libx11-dev \
+          libxcursor-dev \
+          libxinerama-dev \
+          libgl1-mesa-dev \
+          libglu-dev \
+          libasound2-dev \
+          libpulse-dev \
+          libudev-dev \
+          libxi-dev \
+          libxrandr-dev \
+          xvfb \
+          mesa-vulkan-drivers \
+          vulkan-tools \
+          vulkan-validationlayers
+          
+    - name: Install lavapipe (CPU Vulkan driver)
+      run: |
+        sudo apt-get install -y mesa-vulkan-drivers
+        vulkaninfo --summary || true
+        vulkaninfo | grep -A5 "Device Name" || true
+        
+    - name: Set up virtual environment
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        pip install --upgrade pip setuptools wheel
+        
+    - name: Install Python dependencies
+      run: |
+        source .venv/bin/activate
+        pip install -r requirements.txt
+        
+    - name: Run tests
+      run: |
+        source .venv/bin/activate
+        pytest -v --tb=short
