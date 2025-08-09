@@ -1,4 +1,8 @@
-pytest
+matplotlib
 numpy
+pytest
+scipy
+seaborn
 slangpy
 torch
+tqdm
