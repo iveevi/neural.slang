@@ -7,7 +7,7 @@ implementing neural;
 public struct FeedForward<T, int In, int Out, Storage, Activation>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
-    where Storage : IStorage<T>
+    where Storage : IParameterStorage<T>
     where Storage.Differential == Storage
     where Activation : IActivation<T>
 {

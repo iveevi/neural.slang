@@ -106,19 +106,19 @@ struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnab
     }
 }
 
-// Overload for bindless storage
-extension<T, int Dim, int Levels, int Features, Storage> HashGridEncoder<T, Dim, Levels, Features, Storage>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
-    where Storage : IPointerLikeStorage<T>
-{
-    [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(InputVector input)
-        where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels>
-    {
-        OutputVector output;
-        static_assert(false, "Not implemented");
-        return output;
-    }
-}
+// // Overload for bindless storage
+// extension<T, int Dim, int Levels, int Features, Storage> HashGridEncoder<T, Dim, Levels, Features, Storage>
+//     where T : __BuiltinFloatingPointType
+//     where T : IArithmeticAtomicable
+//     where Storage : IPointerLikeStorage<T>
+// {
+//     [BackwardDifferentiable]
+//     OutputVector eval<InputVector, OutputVector>(InputVector input)
+//         where InputVector : IVector<T, Dim>
+//         where OutputVector : IVector<T, Features * Levels>
+//     {
+//         OutputVector output;
+//         static_assert(false, "Not implemented");
+//         return output;
+//     }
+// }

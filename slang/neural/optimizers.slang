@@ -54,9 +54,4 @@ public extension<T> Adam<T> : IOptimizer<T>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
-    // public void step<int N>(inout Array<State, N> state, inout Array<T, N> parameter, Array<T, N> gradient)
-    // {
-    //     for (int i = 0; i < N; i++)
-    //         step(state[i], parameter[i], gradient[i]);
-    // }
 }

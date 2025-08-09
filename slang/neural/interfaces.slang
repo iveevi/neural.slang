@@ -1,8 +1,7 @@
 implementing neural;
 
 // Storage interfaces
-public interface IStorage<T> : IDifferentiablePtrType
-    where T : IArithmeticAtomicable
+public interface IStorage<T> // : IDifferentiablePtrType
 {
     // Iterator for storage parameters
     public associatedtype Address;
@@ -12,7 +11,7 @@ public interface IStorage<T> : IDifferentiablePtrType
     public associatedtype BufferType;
 
     public T read(Address address);
-    public void add(Address address, T value);
+    // public void add(Address address, T value);
     public void write(Address address, T value);
 
     public BufferType getBufferFromAddress(Address address);
@@ -20,18 +19,22 @@ public interface IStorage<T> : IDifferentiablePtrType
     public static Address getOffset(Address base, int elements);
 }
 
-interface IPointerLikeAddress<T>
+public interface IParameterStorage<T> : IStorage<T>, IDifferentiablePtrType
 {
-    T read();
-    void write(T value);
-    void add(T value);
+    public void add(Address address, T value);
 }
 
-interface IPointerLikeStorage<T> : IStorage<T>
-    where T : IArithmeticAtomicable
-{
-    associatedtype Address : IPointerLikeAddress<T>;
-}
+// interface IPointerLikeAddress<T>
+// {
+//     T read();
+//     void write(T value);
+//     void add(T value);
+// }
+
+// interface IPointerLikeStorage<T> : IStorage<T>
+// {
+//     associatedtype Address : IPointerLikeAddress<T>;
+// }
 
 // Vector interface
 public interface IVector<T, int N> : IArithmetic, IDifferentiable
@@ -51,7 +54,7 @@ public interface IVector<T, int N> : IArithmetic, IDifferentiable
         Storage storage,
         no_diff Storage.Address address
     )
-        where Storage : IStorage<T>
+        where Storage : IParameterStorage<T>
         where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector;

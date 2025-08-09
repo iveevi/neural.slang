@@ -255,7 +255,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     public OutputVector apply<int OutputSize, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address)
-        where Storage : IStorage<T>
+        where Storage : IParameterStorage<T>
         where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
@@ -285,7 +285,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         DifferentialPtrPair<Storage> dstorage,
         Storage.Address address,
         OutputVector.Differential doutput)
-        where Storage : IStorage<T>
+        where Storage : IParameterStorage<T>
         where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
