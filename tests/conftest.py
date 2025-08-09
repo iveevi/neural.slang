@@ -11,18 +11,45 @@ RANDOM_SEEDS = [42, 123, 456, 789, 999]
 
 @pytest.fixture(scope="function")
 def device():
-    return spy.create_device(
+    device = spy.create_device(
         spy.DeviceType.vulkan,
         enable_debug_layers=True,
         include_paths=[
             pathlib.Path(__file__).parent.parent.absolute() / "slang",
         ],
     )
+    try:
+        yield device
+    finally:
+        # Best-effort explicit teardown to avoid native leaks
+        for method_name in [
+            "wait_idle",
+            "finish",
+            "flush",
+            "collect_garbage",
+            "gc",
+            "close",
+            "shutdown",
+            "destroy",
+        ]:
+            method = getattr(device, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception:
+                    pass
+
+        # Drop Python references and force a GC cycle
+        device = None
+        import gc
+        gc.collect()
 
 
 @pytest.fixture
 def make_kernel(device):
-    def _make_kernel(shader_name, link_modules=[]):
+    def _make_kernel(shader_name, link_modules=None):
+        if link_modules is None:
+            link_modules = []
         if not shader_name.endswith('.slang'):
             shader_file = f"tests/{shader_name}.slang"
         else:
@@ -41,6 +68,14 @@ def make_kernel(device):
 @pytest.fixture(autouse=True)
 def setup_numpy():
     np.set_printoptions(threshold=10000, linewidth=10000)
+
+
+# Force a GC pass after each test to reduce peak memory from native handles
+@pytest.fixture(autouse=True)
+def force_gc():
+    yield
+    import gc
+    gc.collect()
 
 
 def assert_close(actual, expected, rtol=1e-5, atol=1e-6):
