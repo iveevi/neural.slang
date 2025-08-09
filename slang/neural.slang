@@ -543,7 +543,7 @@ public struct LeakyReLU<T> : IActivation<T>
 {
     T alpha;
 
-    __init(T alpha)
+    public __init(T alpha)
     {
         this.alpha = alpha;
     }
@@ -553,7 +553,7 @@ public struct LeakyReLU<T> : IActivation<T>
         where Vector : IVector<T, N>
         where Vector.Differential == Vector
     {
-        return input.max(alpha);
+        return input.max(input.mul(Vector(alpha)));
     }
 
     void evalBwd<int N, Vector>(inout DifferentialPair<Vector> dinput, Vector.Differential doutput)
