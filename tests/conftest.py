@@ -1,4 +1,3 @@
-
 import pathlib
 import pytest
 import slangpy as spy
