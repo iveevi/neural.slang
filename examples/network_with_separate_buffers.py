@@ -1,0 +1,190 @@
+import pathlib
+import slangpy as spy
+import numpy as np
+import torch.nn as nn
+from .util import create_buffer
+
+
+HERE = pathlib.Path(__file__).parent.parent.absolute()
+
+
+class Layer:
+    @staticmethod
+    def new_params(in_size: int, out_size: int) -> np.ndarray:
+        # PyTorch initialization
+        # TODO: manual initialization
+        linear = nn.Linear(in_size, out_size)
+        weights = linear.weight.detach().numpy().T
+        bias = linear.bias.detach().numpy().reshape(1, -1)
+        return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
+
+    def __init__(self, device: spy.Device, in_size: int, out_size: int):
+        self.device = device
+        self.in_size = in_size
+        self.out_size = out_size
+
+        np_params = self.new_params(in_size, out_size)
+        np_adam_states = np.zeros(np_params.shape[0] * 3, dtype=np.float32)
+
+        self.parameters = create_buffer(device, np_params)
+        self.gradients = create_buffer(device, np.zeros_like(np_params))
+        self.adam_states = create_buffer(device, np_adam_states, 3 * 4)
+
+
+# TODO: later generalize this to any size, depth, encoding, etc.
+class Network:
+    def __init__(self, device: spy.Device, hidden: int, levels: int, input: int, output: int):
+        self.device = device
+        self.hidden = hidden
+        self.levels = levels
+        self.input = input
+        self.output = output
+        self.input_size = self.input if levels == 0 else 2 * levels * self.input
+
+        self.layers = [
+            Layer(device, self.input_size, hidden),
+            Layer(device, hidden, hidden),
+            Layer(device, hidden, hidden),
+            Layer(device, hidden, 1),
+        ]
+
+    def parameters(self):
+        return {
+            "parameters": {
+                "layer1": self.layers[0].parameters,
+                "layer2": self.layers[1].parameters,
+                "layer3": self.layers[2].parameters,
+                "layer4": self.layers[3].parameters,
+            }
+        }
+
+    def gradients(self):
+        return {
+            "gradients": {
+                "layer1": self.layers[0].gradients,
+                "layer2": self.layers[1].gradients,
+                "layer3": self.layers[2].gradients,
+                "layer4": self.layers[3].gradients,
+            }
+        }
+
+    def states(self):
+        return {
+            "states": {
+                "layer1": self.layers[0].adam_states,
+                "layer2": self.layers[1].adam_states,
+                "layer3": self.layers[2].adam_states,
+                "layer4": self.layers[3].adam_states,
+            },
+        }
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "layer1Count": self.hidden * (self.input_size + 1),
+            "layer2Count": self.hidden * (self.hidden + 1),
+            "layer3Count": self.hidden * (self.hidden + 1),
+            "layer4Count": self.output * (self.hidden + 1),
+        }
+
+    def input_vec(self, input: np.ndarray) -> spy.Buffer:
+        assert input.ndim > 1
+        assert input.shape[-1] == self.input
+        return self.device.create_buffer(
+            size=input.nbytes,
+            struct_size=self.input_size * 4,
+            usage=spy.BufferUsage.shader_resource,
+            data=input,
+        )
+
+    def output_vec(self, output: np.ndarray) -> spy.Buffer:
+        assert output.ndim > 1
+        assert output.shape[-1] == self.output
+        return self.device.create_buffer(
+            size=output.nbytes,
+            struct_size=self.output * 4,
+            usage=spy.BufferUsage.shader_resource,
+            data=output,
+        )
+
+
+class Pipeline:
+    @staticmethod
+    def compile_specialization_module(device: spy.Device, hidden: int, levels: int, input: int, output: int) -> spy.SlangModule:
+        source = f"""
+        export static const int In = {input};
+        export static const int Out = {output};
+        export static const int Hidden = {hidden};
+        export static const int Levels = {levels};
+        """
+        return device.load_module_from_source("specialization", source)
+    
+    def __init__(self, device: spy.Device, network: Network):
+        SOURCE = HERE / "slang" / "examples" / "network_with_separate_buffers.slang"
+        self.device = device
+        self.signal_module = device.load_module(str(SOURCE))
+        self.specialization_module = self.compile_specialization_module(
+            device,
+            network.hidden,
+            network.levels,
+            network.input,
+            network.output,
+        )
+        self.forward_kernel = device.create_compute_kernel(device.link_program(
+            modules=[self.signal_module, self.specialization_module],
+            entry_points=[self.signal_module.entry_point("forward")],
+        ))
+        self.backward_kernel = device.create_compute_kernel(device.link_program(
+            modules=[self.signal_module, self.specialization_module],
+            entry_points=[self.signal_module.entry_point("backward")],
+        ))
+        self.optimize_kernel = device.create_compute_kernel(device.link_program(
+            modules=[self.signal_module, self.specialization_module],
+            entry_points=[self.signal_module.entry_point("optimize")],
+        ))
+
+    def forward(self, network: Network, input: spy.Buffer, output: spy.Buffer):
+        globals = {}
+        globals.update(network.parameters())
+
+        elements = input.size // 4
+        
+        self.forward_kernel.dispatch(
+            thread_count=(elements, 1, 1),
+            vars=globals,
+            inputBuffer=input,
+            outputBuffer=output,
+        )
+
+    def backward(self, network: Network, input: spy.Buffer, expected: spy.Buffer):
+        globals = {}
+        globals.update(network.parameters())
+        globals.update(network.gradients())
+
+        elements = input.size // 4
+
+        self.backward_kernel.dispatch(
+            thread_count=(elements, 1, 1),
+            vars=globals,
+            inputBuffer=input,
+            expectedBuffer=expected,
+            boost=1.0/elements,
+        )
+    
+    def optimize(self, network: Network, dispatch_size: int = 1024):        
+        self.optimize_kernel.dispatch(
+            thread_count=(dispatch_size, 1, 1),
+            layer1Params=network.layers[0].parameters,
+            layer1Grads=network.layers[0].gradients,
+            layer1States=network.layers[0].adam_states,
+            layer2Params=network.layers[1].parameters,
+            layer2Grads=network.layers[1].gradients,
+            layer2States=network.layers[1].adam_states,
+            layer3Params=network.layers[2].parameters,
+            layer3Grads=network.layers[2].gradients,
+            layer3States=network.layers[2].adam_states,
+            layer4Params=network.layers[3].parameters,
+            layer4Grads=network.layers[3].gradients,
+            layer4States=network.layers[3].adam_states,
+            dispatchSize=dispatch_size,
+            **network.counts(),
+        )

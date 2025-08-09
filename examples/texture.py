@@ -1,0 +1,93 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+import slangpy as spy
+import pathlib
+
+from PIL import Image
+from tqdm import tqdm
+
+from .util import create_buffer
+from .network_with_separate_buffers import Network, Pipeline
+
+
+ROOT = pathlib.Path(__file__).parent.parent.absolute()
+
+
+# TODO: check against pytorch...
+def main():
+    image = Image.open(ROOT / "examples" / "media" / "texture-128.png")
+    image = np.array(image)
+    image = image[..., :3].astype(np.float32) / 255.0
+    print(image.shape)
+
+    # TODO: take stochastic samples from uv
+    uv = np.linspace(0, 1, image.shape[0])
+    uv = np.stack(np.meshgrid(uv, uv, indexing='xy'), axis=-1)
+    uv = uv.reshape(-1, 2)
+    uv = uv.astype(np.float32)
+    print(uv.shape)
+
+    # plt.imshow(image)
+    # plt.show()
+
+    device = spy.create_device(
+        spy.DeviceType.vulkan,
+        enable_debug_layers=True,
+        include_paths=[
+            ROOT / "slang" / "neural",
+        ],
+    )
+
+    network = Network(device, 16, 4, input=2, output=3)
+
+    pipeline = Pipeline(device, network)
+
+    input_buffer = network.input_vec(uv)
+    texture_buffer = network.output_vec(image.reshape(-1, 3))
+    output_buffer = network.output_vec(np.zeros_like(image.reshape(-1, 3)))
+
+    pipeline.forward(network, input_buffer, output_buffer)
+    output = output_buffer.to_numpy().view(np.float32).reshape(image.shape)
+    
+    # plt.imshow(np.clip(output, 0, 1))
+    # plt.show()
+
+    # plt.imshow(output[..., 0], cmap='RdBu')
+    # plt.show()
+
+    # Training loop
+    history = []
+    for _ in tqdm(range(1000)):
+        pipeline.forward(network, input_buffer, output_buffer)
+        output = output_buffer.to_numpy().view(np.float32).reshape(image.shape)
+        loss = np.mean(np.square(output - image))
+        history.append(loss)
+
+        pipeline.backward(network, input_buffer, texture_buffer)
+        pipeline.optimize(network)
+
+    pipeline.forward(network, input_buffer, output_buffer)
+    output = output_buffer.to_numpy().view(np.float32).reshape(image.shape)
+
+    plt.imshow(np.clip(output, 0, 1))
+    plt.axis('off')
+    plt.show()
+
+    plt.imshow(uv.reshape(image.shape[0], image.shape[1], 2)[..., 0])
+    plt.axis('off')
+    plt.show()
+    
+    plt.imshow(uv.reshape(image.shape[0], image.shape[1], 2)[..., 1])
+    plt.axis('off')
+    plt.show()
+
+    plt.plot(history)
+    plt.yscale('log')
+    plt.show()
+
+if __name__ == "__main__":
+    sns.set_theme()
+    sns.set_palette("pastel")
+
+    main()

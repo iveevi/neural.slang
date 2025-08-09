@@ -1,12 +1,14 @@
 import neural;
 
+extern static const int In;
+extern static const int Out;
 extern static const int Hidden;
 extern static const int Levels; // 0 means no (frequency) encoding
 
-typealias InputVec = InlineVector<float, 1>;
-typealias OutputVec = InlineVector<float, 1>;
+typealias InputVec = InlineVector<float, In>;
+typealias OutputVec = InlineVector<float, Out>;
 typealias HiddenVec = InlineVector<float, Hidden>;
-typealias EncodedVec = InlineVector<float, 2 * Levels>;
+typealias EncodedVec = InlineVector<float, 2 * In * Levels>;
 
 ////////////////////////////////
 // Predict a signal over time //
@@ -40,11 +42,11 @@ OutputVec eval(
 {
     let ff2 = Layer<Hidden, Hidden>(0, {});
     let ff3 = Layer<Hidden, Hidden>(0, {});
-    let ff4 = LastLayer<Hidden, 1>(0, {});
+    let ff4 = LastLayer<Hidden, Out>(0, {});
 
     if (Levels == 0)
     {
-        let ff1 = Layer<1, Hidden>(0, {});
+        let ff1 = Layer<In, Hidden>(0, {});
         let x1 = ff1.eval<InputVec, HiddenVec>(layer1, input);
         let x2 = ff2.eval<HiddenVec, HiddenVec>(layer2, x1);
         let x3 = ff3.eval<HiddenVec, HiddenVec>(layer3, x2);
@@ -53,10 +55,10 @@ OutputVec eval(
     }
     else
     {
-        let encoder = FrequencyEncoder<float, 1, Levels>();
+        let encoder = FrequencyEncoder<float, In, Levels>();
         let encoded = encoder.eval<InputVec, EncodedVec>(input);
 
-        let ff1 = Layer<2 * Levels, Hidden>(0, {});
+        let ff1 = Layer<2 * In * Levels, Hidden>(0, {});
         let x1 = ff1.eval<EncodedVec, HiddenVec>(layer1, encoded);
         let x2 = ff2.eval<HiddenVec, HiddenVec>(layer2, x1);
         let x3 = ff3.eval<HiddenVec, HiddenVec>(layer3, x2);
@@ -69,8 +71,8 @@ OutputVec eval(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void forward(
-    RWStructuredBuffer<float> inputBuffer,
-    RWStructuredBuffer<float> outputBuffer,
+    RWStructuredBuffer<InputVec> inputBuffer,
+    RWStructuredBuffer<OutputVec> outputBuffer,
     uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
@@ -82,7 +84,7 @@ void forward(
 
     let input = InputVec(inputBuffer[tid]);
     let output = eval(layer1, layer2, layer3, layer4, input);
-    outputBuffer[tid] = output[0];
+    outputBuffer[tid] = output;
 }
 
 // Neural network gradients
@@ -113,8 +115,8 @@ float loss(
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void backward(
-	RWStructuredBuffer<float> inputBuffer,
-    RWStructuredBuffer<float> expectedBuffer,
+	RWStructuredBuffer<InputVec> inputBuffer,
+    RWStructuredBuffer<OutputVec> expectedBuffer,
 	uint3 thread_id : SV_DispatchThreadID,
     uniform float boost)
 {
@@ -142,7 +144,7 @@ void backward(
         layer3Diff,
         layer4Diff,
         dinput,
-        OutputVec(expectedBuffer[tid]),
+        expectedBuffer[tid],
         boost
     );
 }
