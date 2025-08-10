@@ -8,27 +8,46 @@ from .util import create_buffer
 HERE = pathlib.Path(__file__).parent.parent.absolute()
 
 
-class Layer:
-    @staticmethod
-    def new_params(in_size: int, out_size: int) -> np.ndarray:
-        # PyTorch initialization
-        # TODO: manual initialization
-        linear = nn.Linear(in_size, out_size)
-        weights = linear.weight.detach().numpy().T
-        bias = linear.bias.detach().numpy().reshape(1, -1)
-        return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
+# TODO: move to util
+def linear_to_numpy(linear: nn.Linear) -> np.ndarray:
+    weights = linear.weight.cpu().detach().numpy().T
+    bias = linear.bias.cpu().detach().numpy().reshape(1, -1)
+    return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
 
+
+def linear_gradients_to_numpy(linear: nn.Linear) -> np.ndarray:
+    assert linear.weight.grad is not None
+    assert linear.bias.grad is not None
+    weights = linear.weight.grad.cpu().detach().numpy().T
+    bias = linear.bias.grad.cpu().detach().numpy().reshape(1, -1)
+    return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
+
+
+class Layer:
     def __init__(self, device: spy.Device, in_size: int, out_size: int):
         self.device = device
         self.in_size = in_size
         self.out_size = out_size
 
-        np_params = self.new_params(in_size, out_size)
-        np_adam_states = np.zeros(np_params.shape[0] * 3, dtype=np.float32)
+        np_params = np.zeros((in_size + 1, out_size), dtype=np.float32)
+        np_adam_states = np.zeros(np_params.size * 3, dtype=np.float32)
+        # np_sgd_states = np.zeros(np_params.size, dtype=np.float32)
 
         self.parameters = create_buffer(device, np_params)
         self.gradients = create_buffer(device, np.zeros_like(np_params))
-        self.adam_states = create_buffer(device, np_adam_states, 3 * 4)
+        self.optimizer_states = create_buffer(device, np_adam_states, 3 * 4)
+        # self.optimizer_states = create_buffer(device, np_sgd_states, 4)
+
+        self.copy_weights(nn.Linear(in_size, out_size))
+
+    def copy_weights(self, linear: nn.Linear):
+        self.parameters = create_buffer(self.device, linear_to_numpy(linear))
+
+    def parameters_to_numpy(self) -> np.ndarray:
+        return self.parameters.to_numpy().view(np.float32).reshape(self.in_size + 1, self.out_size)
+
+    def gradients_to_numpy(self) -> np.ndarray:
+        return self.gradients.to_numpy().view(np.float32).reshape(self.in_size + 1, self.out_size)
 
 
 # TODO: later generalize this to any size, depth, encoding, etc.
@@ -68,15 +87,15 @@ class Network:
             }
         }
 
-    def states(self):
-        return {
-            "states": {
-                "layer1": self.layers[0].adam_states,
-                "layer2": self.layers[1].adam_states,
-                "layer3": self.layers[2].adam_states,
-                "layer4": self.layers[3].adam_states,
-            },
-        }
+    # def states(self):
+    #     return {
+    #         "states": {
+    #             "layer1": self.layers[0].optimizer_states,
+    #             "layer2": self.layers[1].optimizer_states,
+    #             "layer3": self.layers[2].optimizer_states,
+    #             "layer4": self.layers[3].optimizer_states,
+    #         },
+    #     }
 
     def counts(self) -> dict[str, int]:
         return {
@@ -175,16 +194,16 @@ class Pipeline:
             thread_count=(dispatch_size, 1, 1),
             layer1Params=network.layers[0].parameters,
             layer1Grads=network.layers[0].gradients,
-            layer1States=network.layers[0].adam_states,
+            layer1States=network.layers[0].optimizer_states,
             layer2Params=network.layers[1].parameters,
             layer2Grads=network.layers[1].gradients,
-            layer2States=network.layers[1].adam_states,
+            layer2States=network.layers[1].optimizer_states,
             layer3Params=network.layers[2].parameters,
             layer3Grads=network.layers[2].gradients,
-            layer3States=network.layers[2].adam_states,
+            layer3States=network.layers[2].optimizer_states,
             layer4Params=network.layers[3].parameters,
             layer4Grads=network.layers[3].gradients,
-            layer4States=network.layers[3].adam_states,
+            layer4States=network.layers[3].optimizer_states,
             dispatchSize=dispatch_size,
             **network.counts(),
         )

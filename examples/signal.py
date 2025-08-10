@@ -20,7 +20,6 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
-# TODO: check against pytorch...
 def main():
     length = 1024
     time = np.linspace(0, 1, length)

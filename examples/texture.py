@@ -39,7 +39,7 @@ def main():
         ],
     )
 
-    network = Network(device, 16, 4, input=2, output=3)
+    network = Network(device, 64, 8, input=2, output=3)
 
     pipeline = Pipeline(device, network)
 
@@ -71,14 +71,6 @@ def main():
     output = output_buffer.to_numpy().view(np.float32).reshape(image.shape)
 
     plt.imshow(np.clip(output, 0, 1))
-    plt.axis('off')
-    plt.show()
-
-    plt.imshow(uv.reshape(image.shape[0], image.shape[1], 2)[..., 0])
-    plt.axis('off')
-    plt.show()
-    
-    plt.imshow(uv.reshape(image.shape[0], image.shape[1], 2)[..., 1])
     plt.axis('off')
     plt.show()
 

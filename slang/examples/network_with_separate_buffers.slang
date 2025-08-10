@@ -18,6 +18,7 @@ typealias StorageType = StructuredBufferStorage<float>;
 typealias StorageDiffType = DifferentialPtrPair<StorageType>;
 typealias ActivationType = ReLU<float>;
 typealias OptimizerType = Adam<float>;
+// typealias OptimizerType = SGD<float>;
 typealias Layer<int In, int Out> = FeedForward<float, In, Out, StorageType, ActivationType>;
 typealias LastLayer<int In, int Out> = FeedForward<float, In, Out, StorageType, Identity<float>>;
 
@@ -150,15 +151,15 @@ void backward(
 }
 
 // Neural network optimizer states (1D dispatch)
-struct NetworkStates
-{
-    RWStructuredBuffer<OptimizerType.State> layer1;
-    RWStructuredBuffer<OptimizerType.State> layer2;
-    RWStructuredBuffer<OptimizerType.State> layer3;
-    RWStructuredBuffer<OptimizerType.State> layer4;
-}
+// struct NetworkStates
+// {
+//     RWStructuredBuffer<OptimizerType.State> layer1;
+//     RWStructuredBuffer<OptimizerType.State> layer2;
+//     RWStructuredBuffer<OptimizerType.State> layer3;
+//     RWStructuredBuffer<OptimizerType.State> layer4;
+// }
 
-ParameterBlock<NetworkStates> states;
+// ParameterBlock<NetworkStates> states;
 
 void update(
     RWStructuredBuffer<OptimizerType.State> states,
