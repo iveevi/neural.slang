@@ -4,14 +4,14 @@ import seaborn as sns
 import slangpy as spy
 import pathlib
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from .util import create_buffer
-from .network_with_separate_buffers import Network, Pipeline, linear_to_numpy, linear_gradients_to_numpy
+from .util import linear_to_numpy, linear_gradients_to_numpy
+from .network_with_separate_buffers import Network, Pipeline
+from .pytorch_networks import PyTorchNetwork
 
 
 ROOT = pathlib.Path(__file__).parent.parent.absolute()
@@ -21,36 +21,6 @@ def generate_random_signal(length: int) -> np.ndarray:
     signal = 2 * np.random.rand(length) - 1
     signal = gaussian_filter1d(signal, sigma=2)
     return signal
-
-
-class PyTorchNetwork(nn.Module):
-    @staticmethod
-    def frequency_encode(x: torch.Tensor, levels: int) -> torch.Tensor:
-        if levels == 0:
-            return x
-
-        X = []
-        for i in range(levels):
-            X.append(torch.sin(2 ** i * torch.pi * x))
-            X.append(torch.cos(2 ** i * torch.pi * x))
-        return torch.cat(X, dim=1)
-
-    def __init__(self, hidden: int, levels: int, input: int, output: int):
-        super().__init__()
-        encoded_size = 2 * levels if levels > 0 else 1
-        self.levels = levels
-        self.layer1 = nn.Linear(encoded_size, hidden)
-        self.layer2 = nn.Linear(hidden, hidden)
-        self.layer3 = nn.Linear(hidden, hidden)
-        self.layer4 = nn.Linear(hidden, output)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.frequency_encode(x, self.levels)
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        x = F.relu(self.layer3(x))
-        x = self.layer4(x)
-        return x
 
 
 def main():

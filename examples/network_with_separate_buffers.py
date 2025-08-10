@@ -2,25 +2,12 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
-from .util import create_buffer
+from .util import create_buffer, linear_to_numpy, linear_gradients_to_numpy
 
 
 ROOT = pathlib.Path(__file__).parent.parent.absolute()
 
 
-# TODO: move to util
-def linear_to_numpy(linear: nn.Linear) -> np.ndarray:
-    weights = linear.weight.cpu().detach().numpy().T
-    bias = linear.bias.cpu().detach().numpy().reshape(1, -1)
-    return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
-
-
-def linear_gradients_to_numpy(linear: nn.Linear) -> np.ndarray:
-    assert linear.weight.grad is not None
-    assert linear.bias.grad is not None
-    weights = linear.weight.grad.cpu().detach().numpy().T
-    bias = linear.bias.grad.cpu().detach().numpy().reshape(1, -1)
-    return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
 
 
 class Layer:
