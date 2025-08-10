@@ -29,7 +29,7 @@ def main():
         spy.DeviceType.vulkan,
         enable_debug_layers=True,
         include_paths=[
-            ROOT / "slang" / "neural",
+            ROOT / "neural",
         ],
     )
 

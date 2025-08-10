@@ -4,7 +4,7 @@ import slangpy as spy
 import numpy as np
 
 
-HERE = pathlib.Path(__file__).parent.parent.absolute()
+ROOT = pathlib.Path(__file__).parent.parent.absolute()
 
 
 @pytest.fixture(scope="function")
@@ -13,8 +13,7 @@ def device():
         spy.DeviceType.vulkan,
         enable_debug_layers=True,
         include_paths=[
-            HERE / "slang",
-            HERE / "slang" / "neural",
+            ROOT / "neural",
         ],
     )
     try:
@@ -50,9 +49,9 @@ def make_kernel(device):
         if link_modules is None:
             link_modules = []
         if not shader_name.endswith('.slang'):
-            shader_file = f"tests/{shader_name}.slang"
+            shader_file = f"tests/slang/{shader_name}.slang"
         else:
-            shader_file = f"tests/{shader_name}"
+            shader_file = f"tests/slang/{shader_name}"
         
         main_module = device.load_module(shader_file)
         entry_point = main_module.entry_point("computeMain")

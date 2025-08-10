@@ -5,7 +5,7 @@ import torch.nn as nn
 from .util import create_buffer
 
 
-HERE = pathlib.Path(__file__).parent.parent.absolute()
+ROOT = pathlib.Path(__file__).parent.parent.absolute()
 
 
 # TODO: move to util
@@ -138,7 +138,7 @@ class Pipeline:
         return device.load_module_from_source("specialization", source)
     
     def __init__(self, device: spy.Device, network: Network):
-        SOURCE = HERE / "slang" / "examples" / "network_with_separate_buffers.slang"
+        SOURCE = ROOT / "examples" / "slang" / "network_with_separate_buffers.slang"
         self.device = device
         self.signal_module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(

@@ -14,7 +14,6 @@ from .network_with_separate_buffers import Network, Pipeline
 ROOT = pathlib.Path(__file__).parent.parent.absolute()
 
 
-# TODO: check against pytorch...
 def main():
     image = Image.open(ROOT / "examples" / "media" / "texture-128.png")
     image = np.array(image)
@@ -28,18 +27,15 @@ def main():
     uv = uv.astype(np.float32)
     print(uv.shape)
 
-    # plt.imshow(image)
-    # plt.show()
-
     device = spy.create_device(
         spy.DeviceType.vulkan,
         enable_debug_layers=True,
         include_paths=[
-            ROOT / "slang" / "neural",
+            ROOT / "neural",
         ],
     )
 
-    network = Network(device, 64, 8, input=2, output=3)
+    network = Network(device, 32, 8, input=2, output=3)
 
     pipeline = Pipeline(device, network)
 
@@ -49,12 +45,6 @@ def main():
 
     pipeline.forward(network, input_buffer, output_buffer)
     output = output_buffer.to_numpy().view(np.float32).reshape(image.shape)
-    
-    # plt.imshow(np.clip(output, 0, 1))
-    # plt.show()
-
-    # plt.imshow(output[..., 0], cmap='RdBu')
-    # plt.show()
 
     # Training loop
     history = []
@@ -70,12 +60,11 @@ def main():
     pipeline.forward(network, input_buffer, output_buffer)
     output = output_buffer.to_numpy().view(np.float32).reshape(image.shape)
 
-    plt.imshow(np.clip(output, 0, 1))
-    plt.axis('off')
-    plt.show()
-
-    plt.plot(history)
-    plt.yscale('log')
+    _, ax = plt.subplots(2, 1)
+    ax[0].imshow(np.clip(output, 0, 1))
+    ax[0].axis('off')
+    ax[1].plot(history)
+    ax[1].set_yscale('log')
     plt.show()
 
 if __name__ == "__main__":
