@@ -46,7 +46,7 @@ public struct Adam<T> : IOptimizer<T>
     public struct AdamState {
         T m;
         T v;
-        public int t;
+        int t;
     };
 
     public typealias State = AdamState;

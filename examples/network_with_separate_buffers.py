@@ -64,7 +64,7 @@ class Network:
             Layer(device, self.input_size, hidden),
             Layer(device, hidden, hidden),
             Layer(device, hidden, hidden),
-            Layer(device, hidden, 1),
+            Layer(device, hidden, self.output),
         ]
 
     def parameters(self):
@@ -110,7 +110,7 @@ class Network:
         assert input.shape[-1] == self.input
         return self.device.create_buffer(
             size=input.nbytes,
-            struct_size=self.input_size * 4,
+            struct_size=self.input * 4,
             usage=spy.BufferUsage.shader_resource,
             data=input,
         )
@@ -165,7 +165,7 @@ class Pipeline:
         globals = {}
         globals.update(network.parameters())
 
-        elements = input.size // 4
+        elements = input.size // (4 * network.input)
         
         self.forward_kernel.dispatch(
             thread_count=(elements, 1, 1),
@@ -179,7 +179,7 @@ class Pipeline:
         globals.update(network.parameters())
         globals.update(network.gradients())
 
-        elements = input.size // 4
+        elements = input.size // (4 * network.input)
 
         self.backward_kernel.dispatch(
             thread_count=(elements, 1, 1),
