@@ -1,18 +1,76 @@
 import numpy as np
 import pytest
 import torch
-import slangpy as spy
 from .conftest import assert_close
 from .test_utils import create_buffer_for_data
 
 
 @pytest.mark.parametrize("seed", [0])
 @pytest.mark.parametrize("num_params", [64, 128, 256])
+@pytest.mark.parametrize("lr", [0.001, 0.01, 0.1])
+@pytest.mark.parametrize("momentum", [0.0, 0.45, 0.9])
+def test_sgd(device, make_kernel, seed, num_params, lr, momentum):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
+    num_iterations = 64
+    
+    initial_params = np.random.randn(num_params).astype(np.float32) * 0.1
+    
+    # SGD state only needs velocity for momentum
+    sgd_state_data = np.zeros(num_params, dtype=np.float32)  # velocity for each param
+    
+    kernel = make_kernel("sgd")
+    
+    parameters_buffer = create_buffer_for_data(device, initial_params.copy(), 4)
+    state_buffer = create_buffer_for_data(device, sgd_state_data, 4)  # 1 float per state
+    
+    pytorch_params = torch.tensor(initial_params.copy(), requires_grad=True)
+    pytorch_optimizer = torch.optim.SGD([pytorch_params], lr=lr, momentum=momentum)
+    
+    for iteration in range(num_iterations):
+        gradients = np.random.randn(num_params).astype(np.float32) * 0.01
+        gradients_buffer = create_buffer_for_data(device, gradients, 4)
+        
+        kernel.dispatch(
+            thread_count=(num_params, 1, 1),
+            vars={
+                "globals": {
+                    "state": state_buffer,
+                    "parameters": parameters_buffer,
+                    "gradients": gradients_buffer,
+                    "lr": lr,
+                    "momentum": momentum,
+                }
+            },
+            lr=lr,
+            momentum=momentum,
+        )
+        
+        pytorch_optimizer.zero_grad()
+        pytorch_params.grad = torch.tensor(gradients)
+        pytorch_optimizer.step()
+        
+        gpu_params = parameters_buffer.to_numpy().view(np.float32)
+        pytorch_params_current = pytorch_params.detach().numpy()
+        
+        tolerance_scale = 1.0 + iteration * 0.1
+        assert_close(
+            gpu_params, 
+            pytorch_params_current, 
+            rtol=1e-5 * tolerance_scale, 
+            atol=1e-5 * tolerance_scale
+        )
+
+
+# TODO: parameterize lr/momentum, and pass it to the kernel
+@pytest.mark.parametrize("seed", [0])
+@pytest.mark.parametrize("num_params", [64, 128, 256])
 def test_adam(device, make_kernel, seed, num_params):
     np.random.seed(seed)
     torch.manual_seed(seed)
     
-    num_iterations = 10
+    num_iterations = 64
     
     lr = 0.001
     beta1 = 0.9

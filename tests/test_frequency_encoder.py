@@ -13,11 +13,11 @@ def create_specialization_module(device, in_size, levels):
     return device.load_module_from_source("specialization", source)
 
 
+# TODO: util
 def frequency_encoder(input_data: torch.Tensor, levels: int) -> torch.Tensor:
     encoded_parts = []
     for level in range(levels):
-        k = 2.0 ** level
-        frequency = k * torch.pi
+        frequency = 2.0 ** level * torch.pi
         sin_vals = torch.sin(frequency * input_data)
         cos_vals = torch.cos(frequency * input_data)
         encoded_parts.append(torch.cat([sin_vals, cos_vals], dim=1))

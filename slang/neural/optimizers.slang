@@ -1,5 +1,41 @@
 implementing neural;
 
+/////////
+// SGD //
+/////////
+
+public struct SGD<T> : IOptimizer<T>
+    where T : __BuiltinFloatingPointType
+{
+    // Optional momentum
+    public struct SGDState {
+        T velocity;
+    };
+
+    public typealias State = SGDState;
+
+    T alpha;
+    T beta;
+
+    public __init()
+    {
+        this.alpha = T(0.001);
+        this.beta = T(0.0); // No momentum by default
+    }
+
+    public __init(T alpha, T beta)
+    {
+        this.alpha = alpha;
+        this.beta = beta;
+    }
+
+    public void step(inout State state, inout T parameter, T gradient)
+    {
+        state.velocity = beta * state.velocity + alpha * gradient;
+        parameter -= state.velocity;
+    }
+}
+
 //////////
 // Adam //
 //////////
@@ -10,7 +46,7 @@ public struct Adam<T> : IOptimizer<T>
     public struct AdamState {
         T m;
         T v;
-        int t;
+        public int t;
     };
 
     public typealias State = AdamState;
@@ -49,14 +85,4 @@ public struct Adam<T> : IOptimizer<T>
     }
 }
 
-// Overload for storages
-public extension<T> Adam<T> : IOptimizer<T>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
-{
-    // public void step<int N>(inout Array<State, N> state, inout Array<T, N> parameter, Array<T, N> gradient)
-    // {
-    //     for (int i = 0; i < N; i++)
-    //         step(state[i], parameter[i], gradient[i]);
-    // }
-}
+// TODO: overload for storages

@@ -165,8 +165,7 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed, i
     output = network(input_torch)
     
     # Sum over all outputs and batch to get scalar loss for backprop
-    total_loss = torch.sum(output)
-    total_loss.backward()
+    output.backward(torch.ones_like(output))
     
     # Get expected gradients
     expected_input_grad = input_torch.grad.detach().numpy()
