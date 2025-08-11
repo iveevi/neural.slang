@@ -36,9 +36,9 @@ def main():
     )
 
     network = Network(device,
-        hidden=32,
-        hidden_layers=2,
-        levels=4,
+        hidden=64,
+        hidden_layers=3,
+        levels=8,
         input=2,
         output=3,
     )

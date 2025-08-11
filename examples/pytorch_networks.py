@@ -15,19 +15,20 @@ def frequency_encode(x: torch.Tensor, levels: int) -> torch.Tensor:
 
 
 class PyTorchNetwork(nn.Module):
-    def __init__(self, hidden: int, levels: int, input: int, output: int):
+    def __init__(self, hidden: int, levels: int, input: int, output: int, hidden_layers: int = 0):
         super().__init__()
         encoded_size = 2 * levels * input if levels > 0 else input
         self.levels = levels
-        self.layer1 = nn.Linear(encoded_size, hidden)
-        self.layer2 = nn.Linear(hidden, hidden)
-        self.layer3 = nn.Linear(hidden, hidden)
-        self.layer4 = nn.Linear(hidden, output)
+        self.hidden_layers = hidden_layers
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(encoded_size, hidden))
+        for i in range(hidden_layers):
+            self.layers.append(nn.Linear(hidden, hidden))
+        self.layers.append(nn.Linear(hidden, output))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = frequency_encode(x, self.levels)
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        x = F.relu(self.layer3(x))
-        x = self.layer4(x)
+        for layer in self.layers[:-1]:
+            x = F.relu(layer(x))
+        x = self.layers[-1](x)
         return x

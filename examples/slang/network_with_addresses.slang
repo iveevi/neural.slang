@@ -3,60 +3,62 @@ module network_with_addresses;
 import neural;
 
 // Neural network structure
-public struct NetworkWithAddresses<int In, int Out, int Hidden, int Levels, int HiddenLayers, ActivationType, OptimizerType>
-    where ActivationType : IActivation<float>
-    where OptimizerType : IOptimizer<float>
+public struct NetworkWithAddresses<
+    int In,
+    int Out,
+    int Hidden,
+    int Levels,
+    int HiddenLayers,
+    Encoder,
+    Activation
+>
+    where Encoder : IEncoder<float, In>
+    where Activation : IActivation<float>
 {
     typealias StorageType = StructuredBufferStorage<float>;
     typealias StorageDiffType = DifferentialPtrPair<StorageType>;
 
-    typealias Layer<int In, int Out> = FeedForward<float, In, Out, StorageType, ActivationType>;
-    typealias LastLayer<int In, int Out> = FeedForward<float, In, Out, StorageType, Identity<float>>;
+    typealias FirstLayer = FeedForward<float, Encoder.Out, Hidden, StorageType, Activation>;
+    typealias HiddenLayer = FeedForward<float, Hidden, Hidden, StorageType, Activation>;
+    typealias LastLayer = FeedForward<float, Hidden, Out, StorageType, Identity<float>>;
 
     typealias HiddenVec = InlineVector<float, Hidden>;
-    typealias EncodedVec = InlineVector<float, 2 * In * Levels>;
+    typealias EncodedVec = InlineVector<float, Encoder.Out>;
 
     public typealias InputVec = InlineVector<float, In>;
     public typealias OutputVec = InlineVector<float, Out>;
 
+    // Network parameters and configuration
     RWStructuredBuffer<float> parameters;
     RWStructuredBuffer<float> gradients;
-    RWStructuredBuffer<OptimizerType.State> states;
+    RWStructuredBuffer<Adam<float>.State> states;
 
     RWStructuredBuffer<int> layerAddresses;
     uint parameterCount;
 
+    // Evaluation and loss methods
     [BackwardDifferentiable]
     static OutputVec eval(
         StructuredBufferStorage<float> parameterStorage,
         no_diff RWStructuredBuffer<int> layerAddresses,
         no_diff InputVec input)
     {
-        let ff2 = Layer<Hidden, Hidden>(layerAddresses[1], {});
-        let ff3 = Layer<Hidden, Hidden>(layerAddresses[2], {});
-        let ff4 = LastLayer<Hidden, Out>(layerAddresses[3], {});
+        let encoder = Encoder();
+        let encoded = encoder.eval<InputVec, EncodedVec>(input);
 
-        if (Levels == 0)
-        {
-            let ff1 = Layer<In, Hidden>(layerAddresses[0], {});
-            let x1 = ff1.eval<InputVec, HiddenVec>(parameterStorage, input);
-            let x2 = ff2.eval<HiddenVec, HiddenVec>(parameterStorage, x1);
-            let x3 = ff3.eval<HiddenVec, HiddenVec>(parameterStorage, x2);
-            let output = ff4.eval<HiddenVec, OutputVec>(parameterStorage, x3);
-            return output;
-        }
-        else
-        {
-            let encoder = FrequencyEncoder<float, In, Levels>();
-            let encoded = encoder.eval<InputVec, EncodedVec>(input);
+        let ff1 = FirstLayer(layerAddresses[0], {});
+        var hidden = ff1.eval<EncodedVec, HiddenVec>(parameterStorage, encoded);
 
-            let ff1 = Layer<2 * In * Levels, Hidden>(layerAddresses[0], {});
-            let x1 = ff1.eval<EncodedVec, HiddenVec>(parameterStorage, encoded);
-            let x2 = ff2.eval<HiddenVec, HiddenVec>(parameterStorage, x1);
-            let x3 = ff3.eval<HiddenVec, HiddenVec>(parameterStorage, x2);
-            let output = ff4.eval<HiddenVec, OutputVec>(parameterStorage, x3);
-            return output;
+        [ForceUnroll]
+        for (int i = 0; i < HiddenLayers; i++) {
+            let ff = HiddenLayer(layerAddresses[i + 1], {});
+            hidden = ff.eval<HiddenVec, HiddenVec>(parameterStorage, hidden);
         }
+
+        let ffN = LastLayer(layerAddresses[HiddenLayers + 1], {});
+        let output = ffN.eval<HiddenVec, OutputVec>(parameterStorage, hidden);
+
+        return output;
     }
 
     [BackwardDifferentiable]
@@ -71,6 +73,7 @@ public struct NetworkWithAddresses<int In, int Out, int Hidden, int Levels, int 
         return mse.eval(output, expected);
     }
 
+    // Kernel methods
     public OutputVec forward(InputVec input)
     {
         let parameterStorage = StructuredBufferStorage<float>(parameters);
@@ -94,7 +97,7 @@ public struct NetworkWithAddresses<int In, int Out, int Hidden, int Levels, int 
 
     public void optimize(uint tid, uint dispatchSize)
     {
-        let optimizer = OptimizerType();
+        let optimizer = Adam<float>();
         for (uint i = tid; i < parameterCount; i += dispatchSize) {
             optimizer.step(states[i], parameters[i], gradients[i]);
             gradients[i] = 0.0;

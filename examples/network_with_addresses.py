@@ -119,7 +119,10 @@ class Pipeline:
 
     def __init__(self, device: spy.Device, network: Network):
         SOURCE = ROOT / "examples" / "slang" / "network_with_addresses_kernels.slang"
+        
         self.device = device
+
+        # Load modules
         self.signal_module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(
             device,
@@ -129,44 +132,74 @@ class Pipeline:
             network.input,
             network.output,
         )
-        self.forward_kernel = device.create_compute_kernel(device.link_program(
+
+        # Compile forward pass kernel
+        forward_entry_point = self.signal_module.entry_point("forward")
+        foward_program = device.link_program(
             modules=[self.signal_module, self.specialization_module],
-            entry_points=[self.signal_module.entry_point("forward")],
-        ))
-        self.backward_kernel = device.create_compute_kernel(device.link_program(
+            entry_points=[forward_entry_point],
+        )
+        self.forward_pipeline = device.create_compute_pipeline(foward_program)
+
+        # Compile backward pass kernel
+        backward_entry_point = self.signal_module.entry_point("backward")
+        backward_program = device.link_program(
             modules=[self.signal_module, self.specialization_module],
-            entry_points=[self.signal_module.entry_point("backward")],
-        ))
-        self.optimize_kernel = device.create_compute_kernel(device.link_program(
+            entry_points=[backward_entry_point],
+        )
+        self.backward_pipeline = device.create_compute_pipeline(backward_program)
+
+        # Compile optimizer pass kernel
+        optimize_entry_point = self.signal_module.entry_point("optimize")
+        optimize_program = device.link_program(
             modules=[self.signal_module, self.specialization_module],
-            entry_points=[self.signal_module.entry_point("optimize")],
-        ))
+            entry_points=[optimize_entry_point],
+        )
+        self.optimize_pipeline = device.create_compute_pipeline(optimize_program)
 
     def forward(self, network: Network, input: spy.Buffer, output: spy.Buffer):
         elements = input.size // (4 * network.input)
-        
-        self.forward_kernel.dispatch(
-            thread_count=(elements, 1, 1),
-            network=network.dict(),
-            inputBuffer=input,
-            outputBuffer=output,
-        )
+
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.forward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.network = network.dict()
+            cursor.forwardInputs = {
+                "inputBuffer": input,
+                "outputBuffer": output,
+            }
+            cmd.dispatch(thread_count=[elements, 1, 1])
+
+        self.device.submit_command_buffer(command_encoder.finish())
 
     def backward(self, network: Network, input: spy.Buffer, expected: spy.Buffer):
         elements = input.size // (4 * network.input)
 
-        self.backward_kernel.dispatch(
-            thread_count=(elements, 1, 1),
-            network=network.dict(),
-            inputBuffer=input,
-            expectedBuffer=expected,
-            boost=1.0/elements,
-        )
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.backward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.network = network.dict()
+            cursor.backwardInputs = {
+                "inputBuffer": input,
+                "expectedBuffer": expected,
+                "boost": 1.0 / elements,
+            }
+            cmd.dispatch(thread_count=[elements, 1, 1])
+
+        self.device.submit_command_buffer(command_encoder.finish())
 
     def optimize(self, network: Network, dispatch_size: int = 1024):
-        self.optimize_kernel.dispatch(
-            thread_count=(dispatch_size, 1, 1),
-            network=network.dict(),
-            count=network.parameter_count,
-            dispatchSize=dispatch_size,
-        )
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.optimize_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.network = network.dict()
+            cursor.dispatchSize = dispatch_size
+            cmd.dispatch(thread_count=[dispatch_size, 1, 1])
+
+        self.device.submit_command_buffer(command_encoder.finish())

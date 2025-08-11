@@ -4,10 +4,13 @@ implementing neural;
 // Identity encoder //
 //////////////////////
 
-public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
+public struct IdentityEncoder<T, int N> : IEncoder<T, N>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int In = N;
+    public static const int Out = N;
+
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, N>
@@ -24,17 +27,20 @@ public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
 // Spherical harmonics //
 /////////////////////////
 
-struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 2 * Levels + 1>
+public struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int In = 3;
+    public static const int Out = 2 * Levels + 1;
+
     [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(InputVector input)
+    public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, 3>
         where OutputVector : IVector<T, 2 * Levels + 1>
     {
         OutputVector output;
-	static_assert(false, "Not implemented");
+        static_assert(false, "Not implemented");
         return output;
     }
 }
@@ -43,15 +49,20 @@ struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 2 * Levels + 1>
 // Frequency encoder //
 ///////////////////////
 
-public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels * Dim>
+public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int In = Dim;
+    public static const int Out = 2 * Levels * Dim;
+
     [BackwardDerivative(evalBwd)]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
         where OutputVector : IVector<T, 2 * Levels * Dim>
     {
+        static_assert(Levels > 0, "Levels must be greater than 0");
+
         OutputVector output;
 
         [ForceUnroll]
@@ -117,23 +128,6 @@ struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnab
 
     [BackwardDifferentiable]
     OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
-        where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels>
-    {
-        OutputVector output;
-        static_assert(false, "Not implemented");
-        return output;
-    }
-}
-
-// Overload for bindless storage
-extension<T, int Dim, int Levels, int Features, Storage> HashGridEncoder<T, Dim, Levels, Features, Storage>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
-    where Storage : IPointerLikeStorage<T>
-{
-    [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
         where OutputVector : IVector<T, Features * Levels>
     {

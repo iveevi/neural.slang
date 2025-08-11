@@ -32,12 +32,13 @@ def main(address_mode: bool = True):
     signal = np.array(signal, dtype=np.float32).reshape(-1, 1)
 
     # Configuration
-    hidden = 64
+    hidden = 32
     levels = 8
+    hidden_layers = 3
 
     # Prepare PyTorch
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=1, output=1).to(torch_device)
+    torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=1, output=1, hidden_layers=hidden_layers).to(torch_device)
     torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
     # torch_optimizer = torch.optim.SGD(torch_network.parameters(), lr=0.001, momentum=0.9)
     torch_input = torch.from_numpy(time).to(torch_device)
@@ -54,22 +55,18 @@ def main(address_mode: bool = True):
 
     if address_mode:
         from ..network_with_addresses import Network, Pipeline
-        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
+        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
         slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
 
-        slangpy_network.copy_weights(0, torch_network.layer1)
-        slangpy_network.copy_weights(1, torch_network.layer2)
-        slangpy_network.copy_weights(2, torch_network.layer3)
-        slangpy_network.copy_weights(3, torch_network.layer4)
+        for i, layer in enumerate(torch_network.layers):
+            slangpy_network.copy_weights(i, layer)
     else:
         from ..network_with_separate_buffers import Network, Pipeline
-        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
+        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
         slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
         
-        slangpy_network.layers[0].copy_weights(torch_network.layer1)
-        slangpy_network.layers[1].copy_weights(torch_network.layer2)
-        slangpy_network.layers[2].copy_weights(torch_network.layer3)
-        slangpy_network.layers[3].copy_weights(torch_network.layer4)
+        for i, layer in enumerate(torch_network.layers):
+            slangpy_network.layers[i].copy_weights(layer)
 
     slangpy_input = slangpy_network.input_vec(time)
     slangpy_signal = slangpy_network.output_vec(signal)
@@ -81,15 +78,9 @@ def main(address_mode: bool = True):
 
     output_delta = []
 
-    layer1_delta = []
-    layer2_delta = []
-    layer3_delta = []
-    layer4_delta = []
+    layer_deltas = {i: [] for i in range(len(torch_network.layers))}
 
-    layer1_gradient_delta = []
-    layer2_gradient_delta = []
-    layer3_gradient_delta = []
-    layer4_gradient_delta = []
+    layer_gradient_deltas = {i: [] for i in range(len(torch_network.layers))}
 
     for _ in tqdm(range(1000)):
         # PyTorch side
@@ -114,51 +105,28 @@ def main(address_mode: bool = True):
         output_delta.append(np.mean(np.abs(torch_network_output - slangpy_network_output)))
 
         # Calculate layer deltas
-        torch_layer1 = linear_to_numpy(torch_network.layer1)
-        torch_layer2 = linear_to_numpy(torch_network.layer2)
-        torch_layer3 = linear_to_numpy(torch_network.layer3)
-        torch_layer4 = linear_to_numpy(torch_network.layer4)
-
-        slangpy_layer1 = slangpy_network.layer_to_numpy(0)
-        slangpy_layer2 = slangpy_network.layer_to_numpy(1)
-        slangpy_layer3 = slangpy_network.layer_to_numpy(2)
-        slangpy_layer4 = slangpy_network.layer_to_numpy(3)
+        torch_layers = [linear_to_numpy(layer) for layer in torch_network.layers]
+        slangpy_layers = [slangpy_network.layer_to_numpy(i) for i in range(len(torch_layers))]
         
-        layer1_delta.append(np.mean(np.abs(torch_layer1 - slangpy_layer1)))
-        layer2_delta.append(np.mean(np.abs(torch_layer2 - slangpy_layer2)))
-        layer3_delta.append(np.mean(np.abs(torch_layer3 - slangpy_layer3)))
-        layer4_delta.append(np.mean(np.abs(torch_layer4 - slangpy_layer4)))
+        for i, (torch_layer, slangpy_layer) in enumerate(zip(torch_layers, slangpy_layers)):
+            layer_deltas[i].append(np.mean(np.abs(torch_layer - slangpy_layer)))
 
         # Calculate gradient deltas
-        torch_layer1_gradient = linear_gradients_to_numpy(torch_network.layer1)
-        torch_layer2_gradient = linear_gradients_to_numpy(torch_network.layer2)
-        torch_layer3_gradient = linear_gradients_to_numpy(torch_network.layer3)
-        torch_layer4_gradient = linear_gradients_to_numpy(torch_network.layer4)
+        torch_layer_gradients = [linear_gradients_to_numpy(layer) for layer in torch_network.layers]
+        slangpy_layer_gradients = [slangpy_network.layer_gradients_to_numpy(i) for i in range(len(torch_layer_gradients))]
         
-        slangpy_layer1_gradient = slangpy_network.layer_gradients_to_numpy(0)
-        slangpy_layer2_gradient = slangpy_network.layer_gradients_to_numpy(1)
-        slangpy_layer3_gradient = slangpy_network.layer_gradients_to_numpy(2)
-        slangpy_layer4_gradient = slangpy_network.layer_gradients_to_numpy(3)
-        
-        layer1_gradient_delta.append(np.mean(np.abs(torch_layer1_gradient - slangpy_layer1_gradient)))
-        layer2_gradient_delta.append(np.mean(np.abs(torch_layer2_gradient - slangpy_layer2_gradient)))
-        layer3_gradient_delta.append(np.mean(np.abs(torch_layer3_gradient - slangpy_layer3_gradient)))
-        layer4_gradient_delta.append(np.mean(np.abs(torch_layer4_gradient - slangpy_layer4_gradient)))
+        for i, (torch_layer_gradient, slangpy_layer_gradient) in enumerate(zip(torch_layer_gradients, slangpy_layer_gradients)):
+            layer_gradient_deltas[i].append(np.mean(np.abs(torch_layer_gradient - slangpy_layer_gradient)))
         
         # Optimize
         slangpy_pipeline.optimize(slangpy_network)
         torch_optimizer.step()
 
         # Check that slangpy resets gradients
-        slangpy_layer1_gradient = slangpy_network.layer_gradients_to_numpy(0)
-        slangpy_layer2_gradient = slangpy_network.layer_gradients_to_numpy(1)
-        slangpy_layer3_gradient = slangpy_network.layer_gradients_to_numpy(2)
-        slangpy_layer4_gradient = slangpy_network.layer_gradients_to_numpy(3)
+        slangpy_layer_gradients = [slangpy_network.layer_gradients_to_numpy(i) for i in range(len(torch_layer_gradients))]
 
-        assert slangpy_layer1_gradient.sum() == 0, slangpy_layer1_gradient
-        assert slangpy_layer2_gradient.sum() == 0, slangpy_layer2_gradient
-        assert slangpy_layer3_gradient.sum() == 0, slangpy_layer3_gradient
-        assert slangpy_layer4_gradient.sum() == 0, slangpy_layer4_gradient
+        for i, (slangpy_layer_gradient, torch_layer_gradient) in enumerate(zip(slangpy_layer_gradients, torch_layer_gradients)):
+            assert slangpy_layer_gradient.sum() == 0, slangpy_layer_gradient
 
     # Extract final output
     slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
@@ -190,18 +158,14 @@ def main(address_mode: bool = True):
     ax[2].legend()
 
     ax[3].set_title("Layer Deltas")
-    ax[3].plot(layer1_delta, label="Layer 1")
-    ax[3].plot(layer2_delta, label="Layer 2")
-    ax[3].plot(layer3_delta, label="Layer 3")
-    ax[3].plot(layer4_delta, label="Layer 4")
+    for i in range(len(torch_network.layers)):
+        ax[3].plot(layer_deltas[i], label=f"Layer {i}")
     ax[3].set_yscale('log')
     ax[3].legend()
 
     ax[4].set_title("Gradient Deltas")
-    ax[4].plot(layer1_gradient_delta, label="Layer 1")
-    ax[4].plot(layer2_gradient_delta, label="Layer 2")
-    ax[4].plot(layer3_gradient_delta, label="Layer 3")
-    ax[4].plot(layer4_gradient_delta, label="Layer 4")
+    for i in range(len(torch_network.layers)):
+        ax[4].plot(layer_gradient_deltas[i], label=f"Layer {i}")
     ax[4].set_yscale('log')
     ax[4].legend()
 

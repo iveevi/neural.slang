@@ -52,6 +52,11 @@ public struct LeakyReLU<T> : IActivation<T>
 {
     T alpha;
 
+    public __init()
+    {
+        this.alpha = T(0.01);
+    }
+
     public __init(T alpha)
     {
         this.alpha = alpha;
