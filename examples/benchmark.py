@@ -5,8 +5,8 @@ import pathlib
 import torch
 import torch.nn.functional as F
 
-from PIL import Image
 from tqdm import tqdm
+from scipy.ndimage import gaussian_filter1d
 
 from .network_with_separate_buffers import Network, Pipeline
 from .pytorch_networks import PyTorchNetwork
@@ -16,54 +16,45 @@ from .profiling import profile, plot_profiling_results, reset_profiler, set_iter
 ROOT = pathlib.Path(__file__).parent.parent.absolute()
 
 
-def load_texture_data():
-    """Load texture data for training"""
-    image = Image.open(ROOT / "examples" / "media" / "texture-128.png")
-    image = np.array(image)
-    image = image[..., :3].astype(np.float32) / 255.0
-    
-    # Create UV coordinates
-    uv = np.linspace(0, 1, image.shape[0])
-    uv = np.stack(np.meshgrid(uv, uv, indexing='xy'), axis=-1)
-    uv = uv.reshape(-1, 2)
-    uv = uv.astype(np.float32)
-    
-    # Flatten image to match UV coordinates
-    image_flat = image.reshape(-1, 3)
-    
-    return uv, image_flat, image.shape
+def generate_random_signal(length: int) -> np.ndarray:
+    signal = 2 * np.random.rand(length) - 1
+    signal = gaussian_filter1d(signal, sigma=2)
+    return signal
 
 
 def main():
     # Prepare data
-    uv, image_flat, image_shape = load_texture_data()
-    print(f"UV shape: {uv.shape}, Image shape: {image_flat.shape}")
+    length = 1024
+    time = np.linspace(0, 1, length)
+    signal = generate_random_signal(length)
+    time = np.array(time, dtype=np.float32).reshape(-1, 1)
+    signal = np.array(signal, dtype=np.float32).reshape(-1, 1)
 
     # Configuration
-    hidden = 32
-    levels = 8
+    hidden = 64
+    levels = 0
 
     # Prepare SlangPy
     slangpy_device = spy.create_device(
         spy.DeviceType.vulkan,
-        enable_debug_layers=True,
+        enable_debug_layers=False,
         include_paths=[
             ROOT / "neural",
         ],
     )
 
-    slangpy_network = Network(slangpy_device, hidden=hidden, levels=levels, input=2, output=3)
+    slangpy_network = Network(slangpy_device, hidden=hidden, levels=levels, input=1, output=1)
     slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
-    slangpy_input = slangpy_network.input_vec(uv)
-    slangpy_target = slangpy_network.output_vec(image_flat)
-    slangpy_output = slangpy_network.output_vec(np.zeros_like(image_flat))
+    slangpy_input = slangpy_network.input_vec(time)
+    slangpy_signal = slangpy_network.output_vec(signal)
+    slangpy_output = slangpy_network.output_vec(np.zeros_like(signal))
 
     # Prepare PyTorch
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=2, output=3).to(torch_device)
+    torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=1, output=1).to(torch_device)
     torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
-    torch_input = torch.from_numpy(uv).to(torch_device)
-    torch_target = torch.from_numpy(image_flat).to(torch_device)
+    torch_input = torch.from_numpy(time).to(torch_device)
+    torch_signal = torch.from_numpy(signal).to(torch_device)
 
     # Copy weights from PyTorch to SlangPy
     slangpy_network.layers[0].copy_weights(torch_network.layer1)
@@ -78,17 +69,15 @@ def main():
     @profile("pytorch_forward")
     def pytorch_forward():
         torch_network_output = torch_network(torch_input)
-        loss = F.mse_loss(torch_network_output, torch_target)
+        loss = F.mse_loss(torch_network_output, torch_signal)
         torch.cuda.synchronize()
         return loss
     
     @profile("slangpy_forward")
     def slangpy_forward():
         slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
-        slangpy_network_output = slangpy_output.to_numpy().view(np.float32).reshape(-1, 3)
-        loss = np.mean(np.square(slangpy_network_output - image_flat))
         slangpy_device.wait_for_idle()
-        return loss
+        return slangpy_output
     
     @profile("pytorch_backward")
     def pytorch_backward(loss):
@@ -97,8 +86,8 @@ def main():
         torch.cuda.synchronize()
     
     @profile("slangpy_backward")
-    def slangpy_backward(_):
-        slangpy_pipeline.backward(slangpy_network, slangpy_input, slangpy_target)
+    def slangpy_backward():
+        slangpy_pipeline.backward(slangpy_network, slangpy_input, slangpy_signal)
         slangpy_device.wait_for_idle()
 
     @profile("pytorch_optimize")
@@ -113,18 +102,18 @@ def main():
 
     # Training loops - separate SlangPy and PyTorch
     print("Running SlangPy training...")
-    for i in tqdm(range(100), desc="SlangPy"):
+    for i in tqdm(range(1000), desc="SlangPy"):
         set_iteration_count(i)
         
-        slangpy_loss = slangpy_forward()
-        slangpy_backward(slangpy_loss)
+        slangpy_forward()
+        slangpy_backward()
         slangpy_optimize()
     
     # Reset iteration count for PyTorch
     set_iteration_count(0)
     
     print("Running PyTorch training...")
-    for i in tqdm(range(100), desc="PyTorch"):
+    for i in tqdm(range(1000), desc="PyTorch"):
         set_iteration_count(i)
         
         pytorch_loss = pytorch_forward()
@@ -132,8 +121,7 @@ def main():
         pytorch_optimize()
 
     # Generate plots
-    plot_profiling_results(title_suffix=" - Texture Learning")
-
+    plot_profiling_results(title_suffix=" - Signal Learning")
 
 if __name__ == "__main__":
     sns.set_theme()

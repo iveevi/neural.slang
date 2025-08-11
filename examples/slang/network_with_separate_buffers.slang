@@ -68,7 +68,6 @@ OutputVec eval(
     }
 }
 
-// TODO: speed up with num threads...
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void forward(
@@ -150,17 +149,7 @@ void backward(
     );
 }
 
-// Neural network optimizer states (1D dispatch)
-// struct NetworkStates
-// {
-//     RWStructuredBuffer<OptimizerType.State> layer1;
-//     RWStructuredBuffer<OptimizerType.State> layer2;
-//     RWStructuredBuffer<OptimizerType.State> layer3;
-//     RWStructuredBuffer<OptimizerType.State> layer4;
-// }
-
-// ParameterBlock<NetworkStates> states;
-
+// Optimization
 void update(
     RWStructuredBuffer<OptimizerType.State> states,
     RWStructuredBuffer<float> parameters,

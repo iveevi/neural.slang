@@ -51,10 +51,12 @@ def plot_profiling_results(title_suffix=""):
     """Plot timing results comparing PyTorch and SlangPy performance"""
     # Prepare data
     phases = ['forward', 'backward', 'optimize']
-    pytorch_means = []
-    slangpy_means = []
-    pytorch_stds = []
-    slangpy_stds = []
+    pytorch_medians = []
+    slangpy_medians = []
+    pytorch_q1 = []
+    pytorch_q3 = []
+    slangpy_q1 = []
+    slangpy_q3 = []
     
     # Calculate statistics for each phase
     for phase in phases:
@@ -64,10 +66,14 @@ def plot_profiling_results(title_suffix=""):
         pytorch_times = np.array(profiler.timing_data[pytorch_key])
         slangpy_times = np.array(profiler.timing_data[slangpy_key])
         
-        pytorch_means.append(np.mean(pytorch_times))
-        slangpy_means.append(np.mean(slangpy_times))
-        pytorch_stds.append(np.std(pytorch_times))
-        slangpy_stds.append(np.std(slangpy_times))
+        # Calculate quartiles
+        pytorch_medians.append(np.median(pytorch_times))
+        slangpy_medians.append(np.median(slangpy_times))
+        
+        pytorch_q1.append(np.percentile(pytorch_times, 25))
+        pytorch_q3.append(np.percentile(pytorch_times, 75))
+        slangpy_q1.append(np.percentile(slangpy_times, 25))
+        slangpy_q3.append(np.percentile(slangpy_times, 75))
     
     # Create subplots - 3x2 layout to accommodate all time series
     fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 18))
@@ -102,16 +108,22 @@ def plot_profiling_results(title_suffix=""):
     ax3.legend()
     ax3.grid(True, alpha=0.3)
     
-    # Plot 4: Bar chart comparison with error bars
+    # Plot 4: Bar chart comparison with quartile ranges
     x = np.arange(len(phases))
     width = 0.35
     
-    bars1 = ax4.bar(x - width/2, pytorch_means, width, yerr=pytorch_stds, 
+    # Calculate error bar ranges (Q3 - median, median - Q1)
+    pytorch_yerr = [np.array(pytorch_medians) - np.array(pytorch_q1), 
+                    np.array(pytorch_q3) - np.array(pytorch_medians)]
+    slangpy_yerr = [np.array(slangpy_medians) - np.array(slangpy_q1), 
+                    np.array(slangpy_q3) - np.array(slangpy_medians)]
+    
+    bars1 = ax4.bar(x - width/2, pytorch_medians, width, yerr=pytorch_yerr, 
                     label='PyTorch', alpha=0.8, capsize=5)
-    bars2 = ax4.bar(x + width/2, slangpy_means, width, yerr=slangpy_stds, 
+    bars2 = ax4.bar(x + width/2, slangpy_medians, width, yerr=slangpy_yerr, 
                     label='SlangPy', alpha=0.8, capsize=5)
     
-    ax4.set_title('Average Execution Time by Phase')
+    ax4.set_title('Median Execution Time by Phase (with Quartiles)')
     ax4.set_xlabel('Phase')
     ax4.set_ylabel('Time (ms)')
     ax4.set_xticks(x)
@@ -119,14 +131,14 @@ def plot_profiling_results(title_suffix=""):
     ax4.legend()
     ax4.grid(True, alpha=0.3)
     
-    # Add value labels on bars above error bars
-    for i, (bars, stds) in enumerate([(bars1, pytorch_stds), (bars2, slangpy_stds)]):
+    # Add value labels on bars above quartile ranges
+    for i, (bars, q3_vals) in enumerate([(bars1, pytorch_q3), (bars2, slangpy_q3)]):
         for j, bar in enumerate(bars):
-            height = bar.get_height()
-            error_top = height + stds[j]  # Position above the error bar
-            ax4.annotate(f'{height:.2f}',
-                        xy=(bar.get_x() + bar.get_width() / 2, error_top),
-                        xytext=(0, 5),  # 5 points vertical offset above error bar
+            median = bar.get_height()
+            q3_top = q3_vals[j]  # Position above the Q3 quartile
+            ax4.annotate(f'{median:.2f}',
+                        xy=(bar.get_x() + bar.get_width() / 2, q3_top),
+                        xytext=(0, 5),  # 5 points vertical offset above Q3
                         textcoords="offset points",
                         ha='center', va='bottom', fontsize=8, fontweight='bold')
     
@@ -135,8 +147,8 @@ def plot_profiling_results(title_suffix=""):
     phase_labels = []
     
     for i, phase in enumerate(phases):
-        if slangpy_means[i] > 0:  # Avoid division by zero
-            ratio = pytorch_means[i] / slangpy_means[i]
+        if slangpy_medians[i] > 0:  # Avoid division by zero
+            ratio = pytorch_medians[i] / slangpy_medians[i]
             speedup_ratios.append(ratio)
             phase_labels.append(phase)
     
@@ -175,18 +187,22 @@ def plot_profiling_results(title_suffix=""):
     plt.show()
     
     # Print summary statistics
-    print("\n" + "="*70)
+    print("\n" + "="*80)
     print("PERFORMANCE SUMMARY (First iteration excluded)")
-    print("="*70)
+    print("="*80)
     print(f"Total iterations analyzed: {len(profiler.timing_data['pytorch_forward'])}/999 per framework")
     for i, phase in enumerate(phases):
-        pytorch_mean = pytorch_means[i]
-        slangpy_mean = slangpy_means[i]
-        speedup = pytorch_mean / slangpy_mean if slangpy_mean > 0 else 0
+        pytorch_median = pytorch_medians[i]
+        slangpy_median = slangpy_medians[i]
+        speedup = pytorch_median / slangpy_median if slangpy_median > 0 else 0
+        
+        # Calculate IQR (Interquartile Range)
+        pytorch_iqr = pytorch_q3[i] - pytorch_q1[i]
+        slangpy_iqr = slangpy_q3[i] - slangpy_q1[i]
         
         print(f"\n{phase.upper()} PASS:")
-        print(f"  PyTorch:  {pytorch_mean:.3f} ± {pytorch_stds[i]:.3f} ms")
-        print(f"  SlangPy:  {slangpy_mean:.3f} ± {slangpy_stds[i]:.3f} ms")
+        print(f"  PyTorch:  {pytorch_median:.3f} ms (Q1: {pytorch_q1[i]:.3f}, Q3: {pytorch_q3[i]:.3f}, IQR: {pytorch_iqr:.3f})")
+        print(f"  SlangPy:  {slangpy_median:.3f} ms (Q1: {slangpy_q1[i]:.3f}, Q3: {slangpy_q3[i]:.3f}, IQR: {slangpy_iqr:.3f})")
         print(f"  Speedup:  {speedup:.2f}x {'(SlangPy faster)' if speedup > 1 else '(PyTorch faster)'}")
 
 
