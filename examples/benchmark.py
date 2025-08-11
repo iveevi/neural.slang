@@ -21,14 +21,12 @@ ROOT = pathlib.Path(__file__).parent.parent.absolute()
 
 
 class ProfilerState:
-    """Global state for the profiler"""
     def __init__(self):
         self.timing_data = defaultdict(list)
         self.iteration_count = 0
         self.skip_first_iteration = True
     
     def reset(self):
-        """Reset profiling state"""
         self.timing_data.clear()
         self.iteration_count = 0
 
@@ -38,7 +36,6 @@ profiler = ProfilerState()
 
 
 def profile(func_name):
-    """Decorator to profile function execution time"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -59,19 +56,16 @@ def profile(func_name):
 
 
 def reset_profiler():
-    """Reset the global profiler state"""
     global profiler
     profiler.reset()
 
 
 def set_iteration_count(count):
-    """Set the current iteration count"""
     global profiler
     profiler.iteration_count = count
 
 
-def plot_profiling_results(title_suffix=""):
-    """Plot timing results comparing PyTorch and SlangPy performance"""
+def plot_profiling_results():
     # Prepare data
     phases = ['forward', 'backward', 'optimize', 'inference']
     pytorch_medians = []
@@ -109,8 +103,8 @@ def plot_profiling_results(title_suffix=""):
             slangpy_q3.append(0)
     
     # Create subplots - 4x2 layout to accommodate all time series including inference
-    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6), (ax7, ax8)) = plt.subplots(4, 2, figsize=(15, 24), layout='constrained')
-    title = f'PyTorch vs SlangPy Performance Comparison{title_suffix}'
+    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 24), layout='constrained')
+    title = f'PyTorch vs SlangPy Performance Comparison'
     fig.suptitle(title, fontsize=16, fontweight='bold')
     
     # Plot 1: Time series for forward pass
@@ -141,19 +135,19 @@ def plot_profiling_results(title_suffix=""):
     ax3.legend()
     ax3.grid(True, alpha=0.3)
     
-    # Plot 7: Time series for inference pass
+    # Plot 4: Time series for inference pass (switched to ax4)
     if 'pytorch_inference' in profiler.timing_data and 'slangpy_inference' in profiler.timing_data:
         inference_iterations = range(len(profiler.timing_data['pytorch_inference']))
-        ax7.plot(inference_iterations, profiler.timing_data['pytorch_inference'], label='PyTorch', alpha=0.8, linewidth=2)
-        ax7.plot(inference_iterations, profiler.timing_data['slangpy_inference'], label='SlangPy', alpha=0.8, linewidth=2)
-        ax7.set_title('Inference Pass Time Over Iterations')
-        ax7.set_xlabel('Iteration')
-        ax7.set_ylabel('Time (ms)')
-        ax7.legend()
-        ax7.grid(True, alpha=0.3)
+        ax4.plot(inference_iterations, profiler.timing_data['pytorch_inference'], label='PyTorch', alpha=0.8, linewidth=2)
+        ax4.plot(inference_iterations, profiler.timing_data['slangpy_inference'], label='SlangPy', alpha=0.8, linewidth=2)
+        ax4.set_title('Inference Pass Time Over Iterations')
+        ax4.set_xlabel('Iteration')
+        ax4.set_ylabel('Time (ms)')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
     else:
-        ax7.text(0.5, 0.5, 'No inference data available', horizontalalignment='center', verticalalignment='center', transform=ax7.transAxes)
-        ax7.set_title('Inference Pass Time Over Iterations')
+        ax4.text(0.5, 0.5, 'No inference data available', horizontalalignment='center', verticalalignment='center', transform=ax4.transAxes)
+        ax4.set_title('Inference Pass Time Over Iterations')
     
     # Plot 4: Bar chart comparison with quartile ranges
     x = np.arange(len(phases))
@@ -165,25 +159,25 @@ def plot_profiling_results(title_suffix=""):
     slangpy_yerr = [np.array(slangpy_medians) - np.array(slangpy_q1), 
                     np.array(slangpy_q3) - np.array(slangpy_medians)]
     
-    bars1 = ax4.bar(x - width/2, pytorch_medians, width, yerr=pytorch_yerr, 
+    bars1 = ax6.bar(x - width/2, pytorch_medians, width, yerr=pytorch_yerr, 
                     label='PyTorch', alpha=0.8, capsize=5)
-    bars2 = ax4.bar(x + width/2, slangpy_medians, width, yerr=slangpy_yerr, 
+    bars2 = ax6.bar(x + width/2, slangpy_medians, width, yerr=slangpy_yerr, 
                     label='SlangPy', alpha=0.8, capsize=5)
     
-    ax4.set_title('Median Execution Time by Phase (with Quartiles)')
-    ax4.set_xlabel('Phase')
-    ax4.set_ylabel('Time (ms)')
-    ax4.set_xticks(x)
-    ax4.set_xticklabels(phases)
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
+    ax6.set_title('Median Execution Time by Phase (with Quartiles)')
+    ax6.set_xlabel('Phase')
+    ax6.set_ylabel('Time (ms)')
+    ax6.set_xticks(x)
+    ax6.set_xticklabels(phases)
+    ax6.legend()
+    ax6.grid(True, alpha=0.3)
     
     # Add value labels on bars above quartile ranges
     for i, (bars, q3_vals) in enumerate([(bars1, pytorch_q3), (bars2, slangpy_q3)]):
         for j, bar in enumerate(bars):
             median = bar.get_height()
             q3_top = q3_vals[j]  # Position above the Q3 quartile
-            ax4.annotate(f'{median:.2f}',
+            ax6.annotate(f'{median:.2f}',
                         xy=(bar.get_x() + bar.get_width() / 2, q3_top),
                         xytext=(0, 5),  # 5 points vertical offset above Q3
                         textcoords="offset points",
@@ -217,39 +211,11 @@ def plot_profiling_results(title_suffix=""):
                     textcoords="offset points",
                     ha='center', va='bottom', fontsize=10, fontweight='bold')
     
-    # Plot 6: Combined training phases time series comparison
-    ax6.plot(iterations, profiler.timing_data['pytorch_forward'], label='PyTorch Forward', alpha=0.8, linewidth=2)
-    ax6.plot(iterations, profiler.timing_data['pytorch_backward'], label='PyTorch Backward', alpha=0.8, linewidth=2)
-    ax6.plot(iterations, profiler.timing_data['pytorch_optimize'], label='PyTorch Optimize', alpha=0.8, linewidth=2)
-    ax6.plot(iterations, profiler.timing_data['slangpy_forward'], label='SlangPy Forward', alpha=0.8, linewidth=2, linestyle='--')
-    ax6.plot(iterations, profiler.timing_data['slangpy_backward'], label='SlangPy Backward', alpha=0.8, linewidth=2, linestyle='--')
-    ax6.plot(iterations, profiler.timing_data['slangpy_optimize'], label='SlangPy Optimize', alpha=0.8, linewidth=2, linestyle='--')
-    ax6.set_title('Training Phases Combined Time Series')
-    ax6.set_xlabel('Iteration')
-    ax6.set_ylabel('Time (ms)')
-    ax6.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax6.grid(True, alpha=0.3)
-    
-    # Plot 8: Combined inference comparison (if available)
-    if 'pytorch_inference' in profiler.timing_data and 'slangpy_inference' in profiler.timing_data:
-        inference_iterations = range(len(profiler.timing_data['pytorch_inference']))
-        ax8.plot(inference_iterations, profiler.timing_data['pytorch_inference'], label='PyTorch Inference', alpha=0.8, linewidth=2)
-        ax8.plot(inference_iterations, profiler.timing_data['slangpy_inference'], label='SlangPy Inference', alpha=0.8, linewidth=2, linestyle='--')
-        ax8.set_title('Inference Phase Comparison')
-        ax8.set_xlabel('Iteration')
-        ax8.set_ylabel('Time (ms)')
-        ax8.legend()
-        ax8.grid(True, alpha=0.3)
-    else:
-        ax8.text(0.5, 0.5, 'No inference data available', horizontalalignment='center', verticalalignment='center', transform=ax8.transAxes)
-        ax8.set_title('Inference Phase Comparison')
-    
-    plt.tight_layout()
     plt.show()
     
     # Print summary statistics
     print("\n" + "="*80)
-    print("PERFORMANCE SUMMARY (First iteration excluded)")
+    print("PERFORMANCE SUMMARY")
     print("="*80)
     print(f"Total iterations analyzed: {len(profiler.timing_data['pytorch_forward'])}/999 per framework")
     for i, phase in enumerate(phases):
@@ -274,100 +240,15 @@ def plot_profiling_results(title_suffix=""):
         print(f"  Speedup:  {speedup:.2f}x {'(SlangPy faster)' if speedup > 1 else '(PyTorch faster)'}")
 
 
-def plot_hidden_size_scaling(hidden_sizes, timing_results):
-    """Plot violin plots showing performance scaling with hidden layer sizes"""
-    
-    # Prepare data for violin plots
-    phases = ['forward', 'backward', 'optimize', 'inference']
-    frameworks = ['pytorch', 'slangpy']
-    
-    # Create subplots
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12), layout='constrained')
-    axes = axes.flatten()
-    
-    fig.suptitle('Performance Scaling Across Hidden Layer Sizes', fontsize=16, fontweight='bold')
-    
-    for phase_idx, phase in enumerate(phases):
-        ax = axes[phase_idx]
-        
-        # Collect data for each framework and hidden size
-        plot_data = []
-        labels = []
-        colors = []
-        
-        for framework in frameworks:
-            for i, hidden_size in enumerate(hidden_sizes):
-                key = f"{framework}_{phase}_{hidden_size}"
-                if key in timing_results and len(timing_results[key]) > 0:
-                    plot_data.append(timing_results[key])
-                    labels.append(f"{framework.title()}\n{hidden_size}")
-                    colors.append('lightblue' if framework == 'pytorch' else 'lightcoral')
-        
-        if plot_data:
-            # Create violin plot
-            parts = ax.violinplot(plot_data, positions=range(len(plot_data)), 
-                                showmeans=True, showmedians=True, showextrema=True)
-            
-            # Color the violin plots
-            for i, pc in enumerate(parts['bodies']):
-                pc.set_facecolor(colors[i])
-                pc.set_alpha(0.7)
-            
-            # Set labels and title
-            ax.set_xticks(range(len(labels)))
-            ax.set_xticklabels(labels, rotation=45, ha='right')
-            ax.set_ylabel('Time (ms)')
-            ax.set_title(f'{phase.title()} Pass Performance')
-            ax.grid(True, alpha=0.3)
-            
-            # Add median values as text
-            for i, data in enumerate(plot_data):
-                median_val = np.median(data)
-                ax.text(i, median_val, f'{median_val:.2f}', 
-                       ha='center', va='bottom', fontweight='bold', fontsize=8)
-        else:
-            ax.text(0.5, 0.5, f'No {phase} data available', 
-                   ha='center', va='center', transform=ax.transAxes)
-            ax.set_title(f'{phase.title()} Pass Performance')
-    
-    plt.tight_layout()
-    plt.show()
-    
-    # Print scaling summary
-    print("\n" + "="*80)
-    print("HIDDEN SIZE SCALING SUMMARY")
-    print("="*80)
-    
-    for phase in phases:
-        print(f"\n{phase.upper()} PASS SCALING:")
-        for framework in frameworks:
-            medians = []
-            for hidden_size in hidden_sizes:
-                key = f"{framework}_{phase}_{hidden_size}"
-                if key in timing_results and len(timing_results[key]) > 0:
-                    median = np.median(timing_results[key])
-                    medians.append(median)
-                    print(f"  {framework.title()} (hidden={hidden_size}): {median:.3f} ms")
-                else:
-                    print(f"  {framework.title()} (hidden={hidden_size}): No data")
-            
-            # Calculate scaling factor if we have enough data
-            if len(medians) >= 2:
-                scaling_factor = medians[-1] / medians[0] if medians[0] > 0 else 0
-                size_factor = hidden_sizes[-1] / hidden_sizes[0]
-                print(f"  {framework.title()} scaling: {scaling_factor:.2f}x time for {size_factor:.1f}x hidden size")
-
-
 def generate_random_signal(length: int) -> np.ndarray:
     signal = 2 * np.random.rand(length) - 1
     signal = gaussian_filter1d(signal, sigma=2)
     return signal
 
 
-def run_single_benchmark(hidden_size, iterations=100):
-    """Run benchmark for a single hidden layer size"""
+def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
     print(f"\n{'='*60}")
-    print(f"Benchmarking hidden size: {hidden_size}")
+    print(f"Running benchmark with hidden size: {hidden_size}")
     print(f"{'='*60}")
     
     # Prepare data
@@ -378,7 +259,7 @@ def run_single_benchmark(hidden_size, iterations=100):
     signal = np.array(signal, dtype=np.float32).reshape(-1, 1)
 
     # Configuration
-    levels = 0
+    levels = 8
 
     # Prepare SlangPy
     slangpy_device = spy.create_device(
@@ -391,7 +272,14 @@ def run_single_benchmark(hidden_size, iterations=100):
 
     from .network_with_addresses import Network, Pipeline
 
-    slangpy_network = Network(slangpy_device, hidden=hidden_size, hidden_layers=2, levels=levels, input=1, output=1)
+    slangpy_network = Network(
+        slangpy_device,
+        hidden=hidden_size,
+        hidden_layers=hidden_layers,
+        levels=levels,
+        input=1,
+        output=1,
+    )
     slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
     slangpy_input = slangpy_network.input_vec(time_data)
     slangpy_signal = slangpy_network.output_vec(signal)
@@ -399,182 +287,108 @@ def run_single_benchmark(hidden_size, iterations=100):
 
     # Prepare PyTorch
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_network = PyTorchNetwork(hidden=hidden_size, levels=levels, input=1, output=1).to(torch_device)
+    torch_network = PyTorchNetwork(
+        hidden=hidden_size,
+        levels=levels,
+        input=1,
+        output=1,
+        hidden_layers=hidden_layers,
+    ).to(torch_device)
     torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
     torch_input = torch.from_numpy(time_data).to(torch_device)
     torch_signal = torch.from_numpy(signal).to(torch_device)
 
     # Copy weights from PyTorch to SlangPy
-    slangpy_network.copy_weights(0, torch_network.layer1)
-    slangpy_network.copy_weights(1, torch_network.layer2)
-    slangpy_network.copy_weights(2, torch_network.layer3)
-    slangpy_network.copy_weights(3, torch_network.layer4)
+    for i, layer in enumerate(torch_network.layers):
+        slangpy_network.copy_weights(i, layer)
 
-    # Dictionary to store timing results for this hidden size
-    timing_results = defaultdict(list)
-
-    # Phases to profile
+    # Profiled phases using the global profiler
+    @profile('pytorch_forward')
     def pytorch_forward():
-        start_time = time.perf_counter()
         torch_network_output = torch_network(torch_input)
         loss = F.mse_loss(torch_network_output, torch_signal)
         torch.cuda.synchronize()
-        end_time = time.perf_counter()
-        timing_results[f"pytorch_forward_{hidden_size}"].append((end_time - start_time) * 1000)
         return loss
     
+    @profile('slangpy_forward')
     def slangpy_forward():
-        start_time = time.perf_counter()
         slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
         slangpy_device.wait_for_idle()
-        end_time = time.perf_counter()
-        timing_results[f"slangpy_forward_{hidden_size}"].append((end_time - start_time) * 1000)
         return slangpy_output
     
+    @profile('pytorch_backward')
     def pytorch_backward(loss):
-        start_time = time.perf_counter()
         torch_network.zero_grad()
         loss.backward()
         torch.cuda.synchronize()
-        end_time = time.perf_counter()
-        timing_results[f"pytorch_backward_{hidden_size}"].append((end_time - start_time) * 1000)
     
+    @profile('slangpy_backward')
     def slangpy_backward():
-        start_time = time.perf_counter()
         slangpy_pipeline.backward(slangpy_network, slangpy_input, slangpy_signal)
         slangpy_device.wait_for_idle()
-        end_time = time.perf_counter()
-        timing_results[f"slangpy_backward_{hidden_size}"].append((end_time - start_time) * 1000)
 
+    @profile('pytorch_optimize')
     def pytorch_optimize():
-        start_time = time.perf_counter()
         torch_optimizer.step()
         torch.cuda.synchronize()
-        end_time = time.perf_counter()
-        timing_results[f"pytorch_optimize_{hidden_size}"].append((end_time - start_time) * 1000)
 
+    @profile('slangpy_optimize')
     def slangpy_optimize():
-        start_time = time.perf_counter()
         slangpy_pipeline.optimize(slangpy_network)
         slangpy_device.wait_for_idle()
-        end_time = time.perf_counter()
-        timing_results[f"slangpy_optimize_{hidden_size}"].append((end_time - start_time) * 1000)
 
+    @profile('pytorch_inference')
     def pytorch_inference():
-        start_time = time.perf_counter()
         with torch.no_grad():
             torch_network_output = torch_network(torch_input)
         torch.cuda.synchronize()
-        end_time = time.perf_counter()
-        timing_results[f"pytorch_inference_{hidden_size}"].append((end_time - start_time) * 1000)
         return torch_network_output
 
+    @profile('slangpy_inference')
     def slangpy_inference():
-        start_time = time.perf_counter()
         slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
         slangpy_device.wait_for_idle()
-        end_time = time.perf_counter()
-        timing_results[f"slangpy_inference_{hidden_size}"].append((end_time - start_time) * 1000)
         return slangpy_output
 
-    # Training loops - separate SlangPy and PyTorch
-    print("Running SlangPy training...")
-    for i in tqdm(range(iterations), desc="SlangPy"):
-        if i == 0:  # Skip first iteration to avoid initialization overhead
-            slangpy_forward()
-            slangpy_backward()
-            slangpy_optimize()
-            # Remove the first timing measurement
-            for key in timing_results:
-                if timing_results[key]:
-                    timing_results[key].pop()
-        else:
-            slangpy_forward()
-            slangpy_backward()
-            slangpy_optimize()
-    
-    print("Running PyTorch training...")
-    for i in tqdm(range(iterations), desc="PyTorch"):
-        if i == 0:  # Skip first iteration to avoid initialization overhead
-            pytorch_loss = pytorch_forward()
-            pytorch_backward(pytorch_loss)
-            pytorch_optimize()
-            # Remove the first timing measurement
-            for key in timing_results:
-                if 'pytorch' in key and timing_results[key]:
-                    timing_results[key].pop()
-        else:
-            pytorch_loss = pytorch_forward()
-            pytorch_backward(pytorch_loss)
-            pytorch_optimize()
+    # Training loops
+    print("Running training benchmark...")
+    for i in tqdm(range(iterations), desc="Training"):
+        set_iteration_count(i)
+        
+        # SlangPy training
+        slangpy_forward()
+        slangpy_backward()
+        slangpy_optimize()
+        
+        # PyTorch training
+        pytorch_loss = pytorch_forward()
+        pytorch_backward(pytorch_loss)
+        pytorch_optimize()
 
     # Set PyTorch to eval mode for inference
     torch_network.eval()
     
-    print("Running SlangPy inference...")
-    for i in tqdm(range(iterations), desc="SlangPy Inference"):
-        if i == 0:  # Skip first iteration
-            slangpy_inference()
-            if f"slangpy_inference_{hidden_size}" in timing_results and timing_results[f"slangpy_inference_{hidden_size}"]:
-                timing_results[f"slangpy_inference_{hidden_size}"].pop()
-        else:
-            slangpy_inference()
-
-    print("Running PyTorch inference...")
-    for i in tqdm(range(iterations), desc="PyTorch Inference"):
-        if i == 0:  # Skip first iteration
-            pytorch_inference()
-            if f"pytorch_inference_{hidden_size}" in timing_results and timing_results[f"pytorch_inference_{hidden_size}"]:
-                timing_results[f"pytorch_inference_{hidden_size}"].pop()
-        else:
-            pytorch_inference()
-
-    return timing_results
+    print("Running inference benchmark...")
+    for i in tqdm(range(iterations), desc="Inference"):
+        set_iteration_count(i)
+        
+        # SlangPy inference
+        slangpy_inference()
+        
+        # PyTorch inference
+        pytorch_inference()
 
 
 def main():
-    """Main benchmark function that runs across multiple hidden layer sizes"""
-    # Hidden layer sizes to benchmark
-    hidden_sizes = [8, 16, 32, 64, 128]
-    iterations_per_size = 100  # Reduced for faster execution across multiple sizes
+    # Reset profiler and run benchmark
+    reset_profiler()
+    run_benchmark(iterations=1000, hidden_size=64, hidden_layers=2, levels=8)
     
-    print("Starting multi-size benchmarking...")
-    print(f"Hidden sizes: {hidden_sizes}")
-    print(f"Iterations per size: {iterations_per_size}")
-    
-    # Collect all timing results across hidden sizes
-    all_timing_results = defaultdict(list)
-    
-    # Run benchmarks for each hidden size
-    for hidden_size in hidden_sizes:
-        size_results = run_single_benchmark(hidden_size, iterations_per_size)
-        
-        # Merge results into the global timing collection
-        for key, values in size_results.items():
-            all_timing_results[key] = values
-    
+    # Generate plots
     print("\n" + "="*80)
     print("GENERATING PLOTS...")
     print("="*80)
-    
-    # Generate violin plots for hidden size scaling
-    plot_hidden_size_scaling(hidden_sizes, all_timing_results)
-    
-    # Also run one final detailed benchmark with the middle hidden size for traditional plots
-    print(f"\nRunning detailed benchmark for hidden size {hidden_sizes[2]} for traditional plots...")
-    reset_profiler()
-    
-    # Run a single benchmark with the profiler enabled for traditional plots
-    detailed_results = run_single_benchmark(hidden_sizes[2], 200)
-    
-    # Convert detailed results to profiler format for traditional plotting
-    for key, values in detailed_results.items():
-        if f"_{hidden_sizes[2]}" in key:
-            base_key = key.replace(f"_{hidden_sizes[2]}", "")
-            profiler.timing_data[base_key] = values
-    
-    # Generate traditional plots
-    plot_profiling_results(title_suffix=f" - Hidden Size {hidden_sizes[2]}")
+    plot_profiling_results()
 
 if __name__ == "__main__":
     sns.set_theme()

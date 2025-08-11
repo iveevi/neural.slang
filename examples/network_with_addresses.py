@@ -192,14 +192,20 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def optimize(self, network: Network, dispatch_size: int = 1024):
+    def optimize(self, network: Network):
+        BLOCK_SIZE = 64
+
+        count = network.parameter_count
+        groups = (count + BLOCK_SIZE - 1) // BLOCK_SIZE
+
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.optimize_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.network = network.dict()
-            cursor.dispatchSize = dispatch_size
-            cmd.dispatch(thread_count=[dispatch_size, 1, 1])
+            
+            cursor.dispatchSize = groups * BLOCK_SIZE
+            cmd.dispatch(thread_count=[BLOCK_SIZE, groups, 1])
 
         self.device.submit_command_buffer(command_encoder.finish())

@@ -263,11 +263,13 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         var output = OutputVector(T(0.0));
 
         // Matrix multiplication
+        [MaxIters(OutputSize)]
         for (int i = 0; i < OutputSize; i++)
         {
             let biasOffset = Storage.getOffset(address, N * OutputSize + i);
             var sum = storage.read(biasOffset);
 
+            [ForceUnroll]
             for (int j = 0; j < N; j++)
             {
                 let elementOffset = Storage.getOffset(address, j * OutputSize + i);
@@ -292,8 +294,10 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     {
         // Derivative of the input is transposed weight matrix times the output differential
         var d = dthis.d;
+        [MaxIters(OutputSize)]
         for (int j = 0; j < OutputSize; j++)
         {
+            [ForceUnroll]
             for (int i = 0; i < N; i++)
             {
                 let elementOffset = Storage.getOffset(address, i * OutputSize + j);
@@ -302,8 +306,10 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         }
 
         // Derivative of the weights is the outer product of the input and the output differential
+        [MaxIters(N)]
         for (int i = 0; i < N; i++)
         {
+            [ForceUnroll]
             for (int j = 0; j < OutputSize; j++)
             {
                 let x = dthis.p[i];
@@ -314,6 +320,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         }
 
         // Derivative of the bias is the same as the output differential
+        [ForceUnroll]
         for (int j = 0; j < OutputSize; j++)
         {
             let dout = __slang_noop_cast<OutputVector>(doutput)[j];
