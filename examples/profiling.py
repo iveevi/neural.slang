@@ -50,7 +50,7 @@ def profile(func_name):
 def plot_profiling_results(title_suffix=""):
     """Plot timing results comparing PyTorch and SlangPy performance"""
     # Prepare data
-    phases = ['forward', 'backward', 'optimize']
+    phases = ['forward', 'backward', 'optimize', 'inference']
     pytorch_medians = []
     slangpy_medians = []
     pytorch_q1 = []
@@ -63,20 +63,30 @@ def plot_profiling_results(title_suffix=""):
         pytorch_key = f"pytorch_{phase}"
         slangpy_key = f"slangpy_{phase}"
         
-        pytorch_times = np.array(profiler.timing_data[pytorch_key])
-        slangpy_times = np.array(profiler.timing_data[slangpy_key])
-        
-        # Calculate quartiles
-        pytorch_medians.append(np.median(pytorch_times))
-        slangpy_medians.append(np.median(slangpy_times))
-        
-        pytorch_q1.append(np.percentile(pytorch_times, 25))
-        pytorch_q3.append(np.percentile(pytorch_times, 75))
-        slangpy_q1.append(np.percentile(slangpy_times, 25))
-        slangpy_q3.append(np.percentile(slangpy_times, 75))
+        # Check if data exists for this phase
+        if pytorch_key in profiler.timing_data and slangpy_key in profiler.timing_data:
+            pytorch_times = np.array(profiler.timing_data[pytorch_key])
+            slangpy_times = np.array(profiler.timing_data[slangpy_key])
+            
+            # Calculate quartiles
+            pytorch_medians.append(np.median(pytorch_times))
+            slangpy_medians.append(np.median(slangpy_times))
+            
+            pytorch_q1.append(np.percentile(pytorch_times, 25))
+            pytorch_q3.append(np.percentile(pytorch_times, 75))
+            slangpy_q1.append(np.percentile(slangpy_times, 25))
+            slangpy_q3.append(np.percentile(slangpy_times, 75))
+        else:
+            # If no data, append zeros
+            pytorch_medians.append(0)
+            slangpy_medians.append(0)
+            pytorch_q1.append(0)
+            pytorch_q3.append(0)
+            slangpy_q1.append(0)
+            slangpy_q3.append(0)
     
-    # Create subplots - 3x2 layout to accommodate all time series
-    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 18))
+    # Create subplots - 4x2 layout to accommodate all time series including inference
+    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6), (ax7, ax8)) = plt.subplots(4, 2, figsize=(15, 24))
     title = f'PyTorch vs SlangPy Performance Comparison{title_suffix}'
     fig.suptitle(title, fontsize=16, fontweight='bold')
     
@@ -107,6 +117,20 @@ def plot_profiling_results(title_suffix=""):
     ax3.set_ylabel('Time (ms)')
     ax3.legend()
     ax3.grid(True, alpha=0.3)
+    
+    # Plot 7: Time series for inference pass
+    if 'pytorch_inference' in profiler.timing_data and 'slangpy_inference' in profiler.timing_data:
+        inference_iterations = range(len(profiler.timing_data['pytorch_inference']))
+        ax7.plot(inference_iterations, profiler.timing_data['pytorch_inference'], label='PyTorch', alpha=0.8, linewidth=2)
+        ax7.plot(inference_iterations, profiler.timing_data['slangpy_inference'], label='SlangPy', alpha=0.8, linewidth=2)
+        ax7.set_title('Inference Pass Time Over Iterations')
+        ax7.set_xlabel('Iteration')
+        ax7.set_ylabel('Time (ms)')
+        ax7.legend()
+        ax7.grid(True, alpha=0.3)
+    else:
+        ax7.text(0.5, 0.5, 'No inference data available', horizontalalignment='center', verticalalignment='center', transform=ax7.transAxes)
+        ax7.set_title('Inference Pass Time Over Iterations')
     
     # Plot 4: Bar chart comparison with quartile ranges
     x = np.arange(len(phases))
@@ -147,7 +171,7 @@ def plot_profiling_results(title_suffix=""):
     phase_labels = []
     
     for i, phase in enumerate(phases):
-        if slangpy_medians[i] > 0:  # Avoid division by zero
+        if slangpy_medians[i] > 0 and pytorch_medians[i] > 0:  # Avoid division by zero and skip missing data
             ratio = pytorch_medians[i] / slangpy_medians[i]
             speedup_ratios.append(ratio)
             phase_labels.append(phase)
@@ -170,18 +194,32 @@ def plot_profiling_results(title_suffix=""):
                     textcoords="offset points",
                     ha='center', va='bottom', fontsize=10, fontweight='bold')
     
-    # Plot 6: Combined time series comparison
+    # Plot 6: Combined training phases time series comparison
     ax6.plot(iterations, profiler.timing_data['pytorch_forward'], label='PyTorch Forward', alpha=0.8, linewidth=2)
     ax6.plot(iterations, profiler.timing_data['pytorch_backward'], label='PyTorch Backward', alpha=0.8, linewidth=2)
     ax6.plot(iterations, profiler.timing_data['pytorch_optimize'], label='PyTorch Optimize', alpha=0.8, linewidth=2)
     ax6.plot(iterations, profiler.timing_data['slangpy_forward'], label='SlangPy Forward', alpha=0.8, linewidth=2, linestyle='--')
     ax6.plot(iterations, profiler.timing_data['slangpy_backward'], label='SlangPy Backward', alpha=0.8, linewidth=2, linestyle='--')
     ax6.plot(iterations, profiler.timing_data['slangpy_optimize'], label='SlangPy Optimize', alpha=0.8, linewidth=2, linestyle='--')
-    ax6.set_title('All Phases Combined Time Series')
+    ax6.set_title('Training Phases Combined Time Series')
     ax6.set_xlabel('Iteration')
     ax6.set_ylabel('Time (ms)')
     ax6.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax6.grid(True, alpha=0.3)
+    
+    # Plot 8: Combined inference comparison (if available)
+    if 'pytorch_inference' in profiler.timing_data and 'slangpy_inference' in profiler.timing_data:
+        inference_iterations = range(len(profiler.timing_data['pytorch_inference']))
+        ax8.plot(inference_iterations, profiler.timing_data['pytorch_inference'], label='PyTorch Inference', alpha=0.8, linewidth=2)
+        ax8.plot(inference_iterations, profiler.timing_data['slangpy_inference'], label='SlangPy Inference', alpha=0.8, linewidth=2, linestyle='--')
+        ax8.set_title('Inference Phase Comparison')
+        ax8.set_xlabel('Iteration')
+        ax8.set_ylabel('Time (ms)')
+        ax8.legend()
+        ax8.grid(True, alpha=0.3)
+    else:
+        ax8.text(0.5, 0.5, 'No inference data available', horizontalalignment='center', verticalalignment='center', transform=ax8.transAxes)
+        ax8.set_title('Inference Phase Comparison')
     
     plt.tight_layout()
     plt.show()
@@ -194,6 +232,13 @@ def plot_profiling_results(title_suffix=""):
     for i, phase in enumerate(phases):
         pytorch_median = pytorch_medians[i]
         slangpy_median = slangpy_medians[i]
+        
+        # Skip phases with no data
+        if pytorch_median == 0 and slangpy_median == 0:
+            print(f"\n{phase.upper()} PASS:")
+            print("  No data available")
+            continue
+            
         speedup = pytorch_median / slangpy_median if slangpy_median > 0 else 0
         
         # Calculate IQR (Interquartile Range)

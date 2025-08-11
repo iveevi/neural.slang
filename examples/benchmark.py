@@ -4,6 +4,7 @@ import slangpy as spy
 import pathlib
 import torch
 import torch.nn.functional as F
+import argparse
 
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
@@ -22,7 +23,7 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
-def main():
+def main(address_mode: bool = True):
     # Prepare data
     length = 1024
     time = np.linspace(0, 1, length)
@@ -31,7 +32,7 @@ def main():
     signal = np.array(signal, dtype=np.float32).reshape(-1, 1)
 
     # Configuration
-    hidden = 64
+    hidden = 8
     levels = 0
 
     # Prepare SlangPy
@@ -43,7 +44,12 @@ def main():
         ],
     )
 
-    slangpy_network = Network(slangpy_device, hidden=hidden, levels=levels, input=1, output=1)
+    if address_mode:
+        from .network_with_addresses import Network, Pipeline
+    else:
+        from .network_with_separate_buffers import Network, Pipeline
+
+    slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
     slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
     slangpy_input = slangpy_network.input_vec(time)
     slangpy_signal = slangpy_network.output_vec(signal)
@@ -100,6 +106,19 @@ def main():
         slangpy_pipeline.optimize(slangpy_network)
         slangpy_device.wait_for_idle()
 
+    @profile("pytorch_inference")
+    def pytorch_inference():
+        with torch.no_grad():
+            torch_network_output = torch_network(torch_input)
+        torch.cuda.synchronize()
+        return torch_network_output
+
+    @profile("slangpy_inference")
+    def slangpy_inference():
+        slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
+        slangpy_device.wait_for_idle()
+        return slangpy_output
+
     # Training loops - separate SlangPy and PyTorch
     print("Running SlangPy training...")
     for i in tqdm(range(1000), desc="SlangPy"):
@@ -120,11 +139,29 @@ def main():
         pytorch_backward(pytorch_loss)
         pytorch_optimize()
 
+    # Set PyTorch to eval mode for inference
+    torch_network.eval()
+    
+    print("Running SlangPy inference...")
+    for i in tqdm(range(1000), desc="SlangPy"):
+        set_iteration_count(i)
+        slangpy_inference()
+
+    print("Running PyTorch inference...")
+    for i in tqdm(range(1000), desc="PyTorch"):
+        set_iteration_count(i)
+        pytorch_inference()
+
     # Generate plots
     plot_profiling_results(title_suffix=" - Signal Learning")
 
 if __name__ == "__main__":
+    # TODO: move to util
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--address-mode", action="store_true")
+    args = parser.parse_args()
+
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main()
+    main(address_mode=args.address_mode)

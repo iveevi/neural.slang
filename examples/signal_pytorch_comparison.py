@@ -5,12 +5,12 @@ import slangpy as spy
 import pathlib
 import torch
 import torch.nn.functional as F
+import argparse
 
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
 from .util import linear_to_numpy, linear_gradients_to_numpy
-from .network_with_separate_buffers import Network, Pipeline
 from .pytorch_networks import PyTorchNetwork
 
 
@@ -23,7 +23,7 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
-def main():
+def main(address_mode: bool = True):
     # Prepare data
     length = 1024
     time = np.linspace(0, 1, length)
@@ -35,6 +35,14 @@ def main():
     hidden = 64
     levels = 8
 
+    # Prepare PyTorch
+    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=1, output=1).to(torch_device)
+    torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
+    # torch_optimizer = torch.optim.SGD(torch_network.parameters(), lr=0.001, momentum=0.9)
+    torch_input = torch.from_numpy(time).to(torch_device)
+    torch_signal = torch.from_numpy(signal).to(torch_device)
+
     # Prepare SlangPy
     slangpy_device = spy.create_device(
         spy.DeviceType.vulkan,
@@ -44,25 +52,28 @@ def main():
         ],
     )
 
-    slangpy_network = Network(slangpy_device, hidden=hidden, levels=levels, input=1, output=1)
-    slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+    if address_mode:
+        from .network_with_addresses import Network, Pipeline
+        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
+        slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+
+        slangpy_network.copy_weights(0, torch_network.layer1)
+        slangpy_network.copy_weights(1, torch_network.layer2)
+        slangpy_network.copy_weights(2, torch_network.layer3)
+        slangpy_network.copy_weights(3, torch_network.layer4)
+    else:
+        from .network_with_separate_buffers import Network, Pipeline
+        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
+        slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+        
+        slangpy_network.layers[0].copy_weights(torch_network.layer1)
+        slangpy_network.layers[1].copy_weights(torch_network.layer2)
+        slangpy_network.layers[2].copy_weights(torch_network.layer3)
+        slangpy_network.layers[3].copy_weights(torch_network.layer4)
+
     slangpy_input = slangpy_network.input_vec(time)
     slangpy_signal = slangpy_network.output_vec(signal)
     slangpy_output = slangpy_network.output_vec(np.zeros_like(signal))
-
-    # Prepare PyTorch
-    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=1, output=1).to(torch_device)
-    torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
-    # torch_optimizer = torch.optim.SGD(torch_network.parameters(), lr=0.001, momentum=0.9)
-    torch_input = torch.from_numpy(time).to(torch_device)
-    torch_signal = torch.from_numpy(signal).to(torch_device)
-
-    # Copy weights from PyTorch to SlangPy
-    slangpy_network.layers[0].copy_weights(torch_network.layer1)
-    slangpy_network.layers[1].copy_weights(torch_network.layer2)
-    slangpy_network.layers[2].copy_weights(torch_network.layer3)
-    slangpy_network.layers[3].copy_weights(torch_network.layer4)
 
     # Training loop
     torch_history = []
@@ -108,10 +119,10 @@ def main():
         torch_layer3 = linear_to_numpy(torch_network.layer3)
         torch_layer4 = linear_to_numpy(torch_network.layer4)
 
-        slangpy_layer1 = slangpy_network.layers[0].parameters_to_numpy()
-        slangpy_layer2 = slangpy_network.layers[1].parameters_to_numpy()
-        slangpy_layer3 = slangpy_network.layers[2].parameters_to_numpy()
-        slangpy_layer4 = slangpy_network.layers[3].parameters_to_numpy()
+        slangpy_layer1 = slangpy_network.layer_to_numpy(0)
+        slangpy_layer2 = slangpy_network.layer_to_numpy(1)
+        slangpy_layer3 = slangpy_network.layer_to_numpy(2)
+        slangpy_layer4 = slangpy_network.layer_to_numpy(3)
         
         layer1_delta.append(np.mean(np.abs(torch_layer1 - slangpy_layer1)))
         layer2_delta.append(np.mean(np.abs(torch_layer2 - slangpy_layer2)))
@@ -124,10 +135,10 @@ def main():
         torch_layer3_gradient = linear_gradients_to_numpy(torch_network.layer3)
         torch_layer4_gradient = linear_gradients_to_numpy(torch_network.layer4)
         
-        slangpy_layer1_gradient = slangpy_network.layers[0].gradients_to_numpy()
-        slangpy_layer2_gradient = slangpy_network.layers[1].gradients_to_numpy()
-        slangpy_layer3_gradient = slangpy_network.layers[2].gradients_to_numpy()
-        slangpy_layer4_gradient = slangpy_network.layers[3].gradients_to_numpy()
+        slangpy_layer1_gradient = slangpy_network.layer_gradients_to_numpy(0)
+        slangpy_layer2_gradient = slangpy_network.layer_gradients_to_numpy(1)
+        slangpy_layer3_gradient = slangpy_network.layer_gradients_to_numpy(2)
+        slangpy_layer4_gradient = slangpy_network.layer_gradients_to_numpy(3)
         
         layer1_gradient_delta.append(np.mean(np.abs(torch_layer1_gradient - slangpy_layer1_gradient)))
         layer2_gradient_delta.append(np.mean(np.abs(torch_layer2_gradient - slangpy_layer2_gradient)))
@@ -139,10 +150,10 @@ def main():
         torch_optimizer.step()
 
         # Check that slangpy resets gradients
-        slangpy_layer1_gradient = slangpy_network.layers[0].gradients_to_numpy()
-        slangpy_layer2_gradient = slangpy_network.layers[1].gradients_to_numpy()
-        slangpy_layer3_gradient = slangpy_network.layers[2].gradients_to_numpy()
-        slangpy_layer4_gradient = slangpy_network.layers[3].gradients_to_numpy()
+        slangpy_layer1_gradient = slangpy_network.layer_gradients_to_numpy(0)
+        slangpy_layer2_gradient = slangpy_network.layer_gradients_to_numpy(1)
+        slangpy_layer3_gradient = slangpy_network.layer_gradients_to_numpy(2)
+        slangpy_layer4_gradient = slangpy_network.layer_gradients_to_numpy(3)
 
         assert slangpy_layer1_gradient.sum() == 0, slangpy_layer1_gradient
         assert slangpy_layer2_gradient.sum() == 0, slangpy_layer2_gradient
@@ -197,7 +208,11 @@ def main():
     plt.show()
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--address-mode", action="store_true")
+    args = parser.parse_args()
+
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main()
+    main(args.address_mode)

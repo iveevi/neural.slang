@@ -3,12 +3,10 @@ import numpy as np
 import seaborn as sns
 import slangpy as spy
 import pathlib
+import argparse
 
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
-
-from .util import create_buffer
-from .network_with_separate_buffers import Network, Pipeline
 
 
 ROOT = pathlib.Path(__file__).parent.parent.absolute()
@@ -20,7 +18,7 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
-def main():
+def main(address_mode: bool = True):
     length = 1024
     time = np.linspace(0, 1, length)
     signal = generate_random_signal(length)
@@ -33,7 +31,19 @@ def main():
         ],
     )
 
-    network = Network(device, 64, 8, input=1, output=1)
+    if address_mode:
+        from .network_with_addresses import Network, Pipeline
+    else:
+        from .network_with_separate_buffers import Network, Pipeline
+
+    network = Network(
+        device,
+        hidden=64,
+        hidden_layers=2,
+        levels=8,
+        input=1,
+        output=1,
+    )
 
     pipeline = Pipeline(device, network)
 
@@ -59,14 +69,21 @@ def main():
     output = output_buffer.to_numpy().view(np.float32)
 
     _, ax = plt.subplots(2, 1)
-    ax[0].plot(time, output)
-    ax[0].plot(time, signal)
-    ax[1].plot(history)
+    ax[0].plot(time, output, label='output')
+    ax[0].plot(time, signal, label='signal')
+    ax[0].legend()
+    ax[1].plot(history, label='loss')
     ax[1].set_yscale('log')
+    ax[1].legend()
     plt.show()
 
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--address-mode', action='store_true', default=False)
+    args = parser.parse_args()
+
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main()
+    main(args.address_mode)

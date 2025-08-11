@@ -2,12 +2,10 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
-from .util import create_buffer, linear_to_numpy, linear_gradients_to_numpy
+from .util import create_buffer, linear_to_numpy
 
 
 ROOT = pathlib.Path(__file__).parent.parent.absolute()
-
-
 
 
 class Layer:
@@ -39,7 +37,9 @@ class Layer:
 
 # TODO: later generalize this to any size, depth, encoding, etc.
 class Network:
-    def __init__(self, device: spy.Device, hidden: int, levels: int, input: int, output: int):
+    def __init__(self, device: spy.Device, hidden: int, hidden_layers: int, levels: int, input: int, output: int):
+        assert hidden_layers == 2
+
         self.device = device
         self.hidden = hidden
         self.levels = levels
@@ -74,16 +74,6 @@ class Network:
             }
         }
 
-    # def states(self):
-    #     return {
-    #         "states": {
-    #             "layer1": self.layers[0].optimizer_states,
-    #             "layer2": self.layers[1].optimizer_states,
-    #             "layer3": self.layers[2].optimizer_states,
-    #             "layer4": self.layers[3].optimizer_states,
-    #         },
-    #     }
-
     def counts(self) -> dict[str, int]:
         return {
             "layer1Count": self.hidden * (self.input_size + 1),
@@ -112,10 +102,22 @@ class Network:
             data=output,
         )
 
+    def layer_to_numpy(self, layer_index: int) -> np.ndarray:
+        return self.layers[layer_index].parameters_to_numpy()
+
+    def layer_gradients_to_numpy(self, layer_index: int) -> np.ndarray:
+        return self.layers[layer_index].gradients_to_numpy()
+
 
 class Pipeline:
     @staticmethod
-    def compile_specialization_module(device: spy.Device, hidden: int, levels: int, input: int, output: int) -> spy.SlangModule:
+    def compile_specialization_module(
+        device: spy.Device,
+        hidden: int,
+        levels: int,
+        input: int,
+        output: int,
+    ) -> spy.SlangModule:
         source = f"""
         export static const int In = {input};
         export static const int Out = {output};

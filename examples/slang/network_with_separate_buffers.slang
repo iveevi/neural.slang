@@ -10,10 +10,6 @@ typealias OutputVec = InlineVector<float, Out>;
 typealias HiddenVec = InlineVector<float, Hidden>;
 typealias EncodedVec = InlineVector<float, 2 * In * Levels>;
 
-////////////////////////////////
-// Predict a signal over time //
-////////////////////////////////
-
 typealias StorageType = StructuredBufferStorage<float>;
 typealias StorageDiffType = DifferentialPtrPair<StorageType>;
 typealias ActivationType = ReLU<float>;
@@ -39,7 +35,7 @@ OutputVec eval(
 	StorageType layer2,
 	StorageType layer3,
 	StorageType layer4,
-	InputVec input)
+	no_diff InputVec input)
 {
     let ff2 = Layer<Hidden, Hidden>(0, {});
     let ff3 = Layer<Hidden, Hidden>(0, {});
@@ -104,7 +100,7 @@ float loss(
 	StorageType layer2,
 	StorageType layer3,
 	StorageType layer4,
-	InputVec input,
+	no_diff InputVec input,
 	no_diff OutputVec expected)
 {
     let mse = MeanSquaredError<float>();
@@ -132,7 +128,6 @@ void backward(
     let dlayer3 = StructuredBufferStorage<float>(gradients.layer3);
     let dlayer4 = StructuredBufferStorage<float>(gradients.layer4);
 
-    var dinput = diffPair(InputVec(inputBuffer[tid]));
     var layer1Diff = StorageDiffType(layer1, dlayer1);
     var layer2Diff = StorageDiffType(layer2, dlayer2);
     var layer3Diff = StorageDiffType(layer3, dlayer3);
@@ -143,7 +138,7 @@ void backward(
         layer2Diff,
         layer3Diff,
         layer4Diff,
-        dinput,
+        inputBuffer[tid],
         expectedBuffer[tid],
         boost
     );
