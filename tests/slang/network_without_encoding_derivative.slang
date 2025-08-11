@@ -9,6 +9,8 @@ typealias HiddenVec = InlineVector<float, Hidden>;
 typealias OutputVec = InlineVector<float, Out>;
 
 // Network with In -> Hidden -> Hidden -> Hidden -> Out layers - derivative version
+typealias Layer<int In, int Out> = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
+
 struct NetworkWithoutEncodingDerivativeGlobals
 {
     RWStructuredBuffer<InputVec> input;
@@ -34,10 +36,10 @@ OutputVec network_forward(
     StructuredBufferStorage<float> layer4,
     InputVec input)
 {
-    let ff1 = FeedForward<float, In, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff2 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff3 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff4 = FeedForward<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff1 = Layer<In, Hidden>(0, {});
+    let ff2 = Layer<Hidden, Hidden>(0, {});
+    let ff3 = Layer<Hidden, Hidden>(0, {});
+    let ff4 = Layer<Hidden, Out>(0, {});
 
     let x1 = ff1.eval<InputVec, HiddenVec>(layer1, input);
     let x2 = ff2.eval<HiddenVec, HiddenVec>(layer2, x1);

@@ -13,6 +13,8 @@ typealias HiddenVec = InlineVector<float, Hidden>;
 typealias EncodedVec = InlineVector<float, Encoded>;
 
 // Network with frequency encoding derivative: In -> [FrequencyEncoder] -> Encoded -> Hidden -> Hidden -> Hidden -> Out
+typealias Layer<int In, int Out> = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
+
 struct NetworkWithEncodingDerivativeGlobals
 {
     RWStructuredBuffer<InputVec> input;
@@ -40,10 +42,10 @@ OutputVec network_with_encoding(
 {
     let encoder = FrequencyEncoder<float, In, Levels>();
     
-    let ff1 = FeedForward<float, Encoded, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff2 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff3 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
-    let ff4 = FeedForward<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff1 = Layer<Encoded, Hidden>(0, {});
+    let ff2 = Layer<Hidden, Hidden>(0, {});
+    let ff3 = Layer<Hidden, Hidden>(0, {});
+    let ff4 = Layer<Hidden, Out>(0, {});
 
     let encoded = encoder.eval<InputVec, EncodedVec>(input);
     

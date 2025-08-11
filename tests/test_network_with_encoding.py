@@ -200,3 +200,193 @@ def test_network_with_encoding_derivative(device, make_kernel, random_seed, in_s
     assert_close(layer2_derivatives, expected_layer2_grad, rtol=1e-3, atol=1e-3)
     assert_close(layer3_derivatives, expected_layer3_grad, rtol=1e-3, atol=1e-3)
     assert_close(layer4_derivatives, expected_layer4_grad, rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [2, 3])
+@pytest.mark.parametrize("levels", [6, 7])
+@pytest.mark.parametrize("hidden_size", [16, 32])
+@pytest.mark.parametrize("out_size", [16])
+@pytest.mark.parametrize("offset", [0, 16, 32, 64])
+def test_network_with_encoding_address(device, make_kernel, random_seed, in_size, levels, hidden_size, out_size, offset):
+    """Test network with encoding where all layer weights are stored in the same buffer at different offsets."""
+    np.random.seed(random_seed)
+    
+    result = create_network_layers(random_seed, in_size, levels, hidden_size, out_size)
+    network, layer1_params, layer2_params, layer3_params, layer4_params = result
+    
+    batch_size = 16
+    test_inputs = (np.random.rand(batch_size, in_size).astype(np.float32) - 0.5) * 2.0
+    
+    specialization_module = create_specialization_module(device, in_size, levels, hidden_size, out_size)
+    kernel = make_kernel("network_with_encoding_address", link_modules=[specialization_module])
+    
+    input_buffer = create_buffer_for_data(device, test_inputs, in_size * 4)
+    output_buffer = create_output_buffer(device, batch_size, out_size)
+    
+    # Calculate total parameter size and addresses
+    layer1_size = layer1_params.size
+    layer2_size = layer2_params.size  
+    layer3_size = layer3_params.size
+    layer4_size = layer4_params.size
+    
+    # Calculate addresses within the combined buffer (after initial offset)
+    layer1_address = offset
+    layer2_address = layer1_address + layer1_size
+    layer3_address = layer2_address + layer2_size
+    layer4_address = layer3_address + layer3_size
+    
+    # Create combined parameter buffer with initial offset
+    total_param_size = layer1_size + layer2_size + layer3_size + layer4_size
+    combined_params = np.zeros(total_param_size + offset, dtype=np.float32)
+    
+    if offset > 0:
+        # Fill padding with random data
+        combined_params[:offset] = np.random.rand(offset).astype(np.float32)
+    
+    # Place layer parameters at their respective addresses
+    combined_params[layer1_address:layer1_address + layer1_size] = layer1_params.flatten()
+    combined_params[layer2_address:layer2_address + layer2_size] = layer2_params.flatten()
+    combined_params[layer3_address:layer3_address + layer3_size] = layer3_params.flatten()
+    combined_params[layer4_address:layer4_address + layer4_size] = layer4_params.flatten()
+    
+    parameters_buffer = create_buffer_for_data(device, combined_params, 4)
+    
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "input": input_buffer,
+                "output": output_buffer,
+                "parameters": parameters_buffer,
+                "layer1Address": layer1_address,
+                "layer2Address": layer2_address,
+                "layer3Address": layer3_address,
+                "layer4Address": layer4_address,
+            }
+        },
+    )
+    
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, out_size)
+    input_torch = torch.tensor(test_inputs)
+    encoded = frequency_encoder(input_torch, levels)
+    expected = network(encoded).detach().numpy()
+    
+    assert_close(output, expected)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [2, 3])
+@pytest.mark.parametrize("levels", [6, 7])
+@pytest.mark.parametrize("hidden_size", [16, 32])
+@pytest.mark.parametrize("out_size", [16])
+@pytest.mark.parametrize("offset", [0, 16, 32, 64])
+def test_network_with_encoding_address_derivative(device, make_kernel, random_seed, in_size, levels, hidden_size, out_size, offset):
+    """Test network with encoding derivative where all layer weights are stored in the same buffer at different offsets."""
+    np.random.seed(random_seed)
+    
+    result = create_network_layers(random_seed, in_size, levels, hidden_size, out_size)
+    network, layer1_params, layer2_params, layer3_params, layer4_params = result
+    
+    batch_size = 16
+    test_inputs = (np.random.rand(batch_size, in_size).astype(np.float32) - 0.5) * 2.0
+    
+    specialization_module = create_specialization_module(device, in_size, levels, hidden_size, out_size)
+    kernel = make_kernel("network_with_encoding_address_derivative", link_modules=[specialization_module])
+    
+    input_buffer = create_buffer_for_data(device, test_inputs, in_size * 4)
+    dinput_buffer = create_output_buffer(device, batch_size, in_size)
+    
+    # Calculate total parameter size and addresses
+    layer1_size = layer1_params.size
+    layer2_size = layer2_params.size  
+    layer3_size = layer3_params.size
+    layer4_size = layer4_params.size
+    
+    # Calculate addresses within the combined buffer (after initial offset)
+    layer1_address = offset
+    layer2_address = layer1_address + layer1_size
+    layer3_address = layer2_address + layer2_size
+    layer4_address = layer3_address + layer3_size
+    
+    # Create combined parameter buffer with initial offset
+    total_param_size = layer1_size + layer2_size + layer3_size + layer4_size
+    combined_params = np.zeros(total_param_size + offset, dtype=np.float32)
+    
+    if offset > 0:
+        # Fill padding with random data
+        combined_params[:offset] = np.random.rand(offset).astype(np.float32)
+    
+    # Place layer parameters at their respective addresses
+    combined_params[layer1_address:layer1_address + layer1_size] = layer1_params.flatten()
+    combined_params[layer2_address:layer2_address + layer2_size] = layer2_params.flatten()
+    combined_params[layer3_address:layer3_address + layer3_size] = layer3_params.flatten()
+    combined_params[layer4_address:layer4_address + layer4_size] = layer4_params.flatten()
+    
+    parameters_buffer = create_buffer_for_data(device, combined_params, 4)
+    
+    # Create gradient buffer for combined parameters (same size as combined parameters)
+    dparameters_buffer = create_buffer_for_data(device, np.zeros_like(combined_params), 4)
+    
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "input": input_buffer,
+                "dinput": dinput_buffer,
+                "parameters": parameters_buffer,
+                "dparameters": dparameters_buffer,
+                "layer1Address": layer1_address,
+                "layer2Address": layer2_address,
+                "layer3Address": layer3_address,
+                "layer4Address": layer4_address,
+            }
+        },
+    )
+    
+    # Get derivative results
+    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
+    combined_param_derivatives = dparameters_buffer.to_numpy().view(np.float32).reshape(combined_params.shape)
+    
+    # Extract individual layer derivatives from the combined buffer
+    layer1_derivatives = combined_param_derivatives[layer1_address:layer1_address + layer1_size].reshape(layer1_params.shape)
+    layer2_derivatives = combined_param_derivatives[layer2_address:layer2_address + layer2_size].reshape(layer2_params.shape)
+    layer3_derivatives = combined_param_derivatives[layer3_address:layer3_address + layer3_size].reshape(layer3_params.shape)
+    layer4_derivatives = combined_param_derivatives[layer4_address:layer4_address + layer4_size].reshape(layer4_params.shape)
+    
+    # Compute expected derivatives using PyTorch autograd
+    input_torch = torch.tensor(test_inputs, requires_grad=True)
+    
+    for param in network.parameters():
+        param.requires_grad_(True)
+    
+    def network_with_encoding(input_tensor):
+        encoded = frequency_encoder(input_tensor, levels)
+        return network(encoded)
+    
+    output = network_with_encoding(input_torch)
+    
+    total_loss = torch.sum(output)
+    total_loss.backward()
+    
+    expected_input_derivatives = input_torch.grad.detach().numpy()
+    
+    expected_w1_grad = network[0].weight.grad.detach().numpy().T
+    expected_b1_grad = network[0].bias.grad.detach().numpy().reshape(1, -1)
+    expected_w2_grad = network[2].weight.grad.detach().numpy().T
+    expected_b2_grad = network[2].bias.grad.detach().numpy().reshape(1, -1)
+    expected_w3_grad = network[4].weight.grad.detach().numpy().T
+    expected_b3_grad = network[4].bias.grad.detach().numpy().reshape(1, -1)
+    expected_w4_grad = network[6].weight.grad.detach().numpy().T
+    expected_b4_grad = network[6].bias.grad.detach().numpy().reshape(1, -1)
+    
+    expected_layer1_grad = np.concatenate((expected_w1_grad, expected_b1_grad), axis=0)
+    expected_layer2_grad = np.concatenate((expected_w2_grad, expected_b2_grad), axis=0)
+    expected_layer3_grad = np.concatenate((expected_w3_grad, expected_b3_grad), axis=0)
+    expected_layer4_grad = np.concatenate((expected_w4_grad, expected_b4_grad), axis=0)
+
+    assert_close(input_derivatives, expected_input_derivatives, rtol=1e-3, atol=1e-3) 
+    assert_close(layer1_derivatives, expected_layer1_grad, rtol=1e-3, atol=1e-3)
+    assert_close(layer2_derivatives, expected_layer2_grad, rtol=1e-3, atol=1e-3)
+    assert_close(layer3_derivatives, expected_layer3_grad, rtol=1e-3, atol=1e-3)
+    assert_close(layer4_derivatives, expected_layer4_grad, rtol=1e-3, atol=1e-3)
