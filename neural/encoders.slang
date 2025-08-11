@@ -1,5 +1,25 @@
 implementing neural;
 
+//////////////////////
+// Identity encoder //
+//////////////////////
+
+public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
+{
+    [BackwardDifferentiable]
+    public OutputVector eval<InputVector, OutputVector>(InputVector input)
+        where InputVector : IVector<T, N>
+        where OutputVector : IVector<T, N>
+    {
+        static_assert(InputVector is OutputVector,
+            "Identity encoder requires input and "
+            "output vectors to be the same");
+        return __slang_noop_cast<OutputVector>(input);
+    }
+}
+
 /////////////////////////
 // Spherical harmonics //
 /////////////////////////

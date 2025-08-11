@@ -86,33 +86,33 @@ public interface ILoss<T>
 }
 
 // Optimizer interface
-interface IOptimizer<T>
+public interface IOptimizer<T>
     where T : __BuiltinFloatingPointType
 {
-    associatedtype State;
+    public associatedtype State;
 
-    void step(inout State state, inout T parameter, T gradient);
+    public void step(inout State state, inout T parameter, T gradient);
 }
 
 // Encoder interface
-interface IEncoder<T, int In, int Out>
+public interface IEncoder<T, int In, int Out>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
     [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(InputVector input)
+    public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, In>
         where OutputVector : IVector<T, Out>;
 }
 
 // Learnable encoder interface
-interface ILearnableEncoder<T, int In, int Out, Storage>
+public interface ILearnableEncoder<T, int In, int Out, Storage>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
     where Storage : IStorage<T>
 {
     [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, In>
         where OutputVector : IVector<T, Out>;
 }

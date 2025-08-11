@@ -127,7 +127,7 @@ class Pipeline:
         return device.load_module_from_source("specialization", source)
     
     def __init__(self, device: spy.Device, network: Network):
-        SOURCE = ROOT / "examples" / "slang" / "network_with_separate_buffers.slang"
+        SOURCE = ROOT / "examples" / "slang" / "network_with_separate_buffers_kernels.slang"
         self.device = device
         self.signal_module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(

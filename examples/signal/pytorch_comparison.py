@@ -10,11 +10,11 @@ import argparse
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from .util import linear_to_numpy, linear_gradients_to_numpy
-from .pytorch_networks import PyTorchNetwork
+from ..util import linear_to_numpy, linear_gradients_to_numpy
+from ..pytorch_networks import PyTorchNetwork
 
 
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
 
 
 def generate_random_signal(length: int) -> np.ndarray:
@@ -53,7 +53,7 @@ def main(address_mode: bool = True):
     )
 
     if address_mode:
-        from .network_with_addresses import Network, Pipeline
+        from ..network_with_addresses import Network, Pipeline
         slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
         slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
 
@@ -62,7 +62,7 @@ def main(address_mode: bool = True):
         slangpy_network.copy_weights(2, torch_network.layer3)
         slangpy_network.copy_weights(3, torch_network.layer4)
     else:
-        from .network_with_separate_buffers import Network, Pipeline
+        from ..network_with_separate_buffers import Network, Pipeline
         slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=2, levels=levels, input=1, output=1)
         slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
         

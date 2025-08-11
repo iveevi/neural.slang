@@ -3,19 +3,18 @@ import numpy as np
 import seaborn as sns
 import slangpy as spy
 import pathlib
-import argparse
 
 from PIL import Image
 from tqdm import tqdm
 
-from .util import create_buffer
-from .network_with_separate_buffers import Network, Pipeline
+from ..util import create_buffer
+from ..network_with_addresses import Network, Pipeline
 
 
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
 
 
-def main(address_mode: bool = True):
+def main():
     image = Image.open(ROOT / "examples" / "media" / "texture-128.png")
     image = np.array(image)
     image = image[..., :3].astype(np.float32) / 255.0
@@ -36,15 +35,10 @@ def main(address_mode: bool = True):
         ],
     )
 
-    if address_mode:
-        from .network_with_addresses import Network, Pipeline
-    else:
-        from .network_with_separate_buffers import Network, Pipeline
-
     network = Network(device,
         hidden=32,
         hidden_layers=2,
-        levels=8,
+        levels=4,
         input=2,
         output=3,
     )
@@ -80,11 +74,7 @@ def main(address_mode: bool = True):
     plt.show()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--address-mode", action="store_true")
-    args = parser.parse_args()
-
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main(address_mode=args.address_mode)
+    main()

@@ -364,7 +364,7 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
-def run_single_benchmark(hidden_size, address_mode, iterations=100):
+def run_single_benchmark(hidden_size, iterations=100):
     """Run benchmark for a single hidden layer size"""
     print(f"\n{'='*60}")
     print(f"Benchmarking hidden size: {hidden_size}")
@@ -389,10 +389,7 @@ def run_single_benchmark(hidden_size, address_mode, iterations=100):
         ],
     )
 
-    if address_mode:
-        from .network_with_addresses import Network, Pipeline
-    else:
-        from .network_with_separate_buffers import Network, Pipeline
+    from .network_with_addresses import Network, Pipeline
 
     slangpy_network = Network(slangpy_device, hidden=hidden_size, hidden_layers=2, levels=levels, input=1, output=1)
     slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
@@ -408,10 +405,10 @@ def run_single_benchmark(hidden_size, address_mode, iterations=100):
     torch_signal = torch.from_numpy(signal).to(torch_device)
 
     # Copy weights from PyTorch to SlangPy
-    slangpy_network.layers[0].copy_weights(torch_network.layer1)
-    slangpy_network.layers[1].copy_weights(torch_network.layer2)
-    slangpy_network.layers[2].copy_weights(torch_network.layer3)
-    slangpy_network.layers[3].copy_weights(torch_network.layer4)
+    slangpy_network.copy_weights(0, torch_network.layer1)
+    slangpy_network.copy_weights(1, torch_network.layer2)
+    slangpy_network.copy_weights(2, torch_network.layer3)
+    slangpy_network.copy_weights(3, torch_network.layer4)
 
     # Dictionary to store timing results for this hidden size
     timing_results = defaultdict(list)
@@ -535,7 +532,7 @@ def run_single_benchmark(hidden_size, address_mode, iterations=100):
     return timing_results
 
 
-def main(address_mode: bool = True):
+def main():
     """Main benchmark function that runs across multiple hidden layer sizes"""
     # Hidden layer sizes to benchmark
     hidden_sizes = [8, 16, 32, 64, 128]
@@ -550,7 +547,7 @@ def main(address_mode: bool = True):
     
     # Run benchmarks for each hidden size
     for hidden_size in hidden_sizes:
-        size_results = run_single_benchmark(hidden_size, address_mode, iterations_per_size)
+        size_results = run_single_benchmark(hidden_size, iterations_per_size)
         
         # Merge results into the global timing collection
         for key, values in size_results.items():
@@ -568,7 +565,7 @@ def main(address_mode: bool = True):
     reset_profiler()
     
     # Run a single benchmark with the profiler enabled for traditional plots
-    detailed_results = run_single_benchmark(hidden_sizes[2], address_mode, 200)
+    detailed_results = run_single_benchmark(hidden_sizes[2], 200)
     
     # Convert detailed results to profiler format for traditional plotting
     for key, values in detailed_results.items():
@@ -580,12 +577,7 @@ def main(address_mode: bool = True):
     plot_profiling_results(title_suffix=f" - Hidden Size {hidden_sizes[2]}")
 
 if __name__ == "__main__":
-    # TODO: move to util
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--address-mode", action="store_true")
-    args = parser.parse_args()
-
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main(address_mode=args.address_mode)
+    main()

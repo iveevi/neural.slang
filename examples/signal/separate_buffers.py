@@ -3,13 +3,14 @@ import numpy as np
 import seaborn as sns
 import slangpy as spy
 import pathlib
-import argparse
 
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
+from ..network_with_separate_buffers import Network, Pipeline
 
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+
+ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
 
 
 def generate_random_signal(length: int) -> np.ndarray:
@@ -18,7 +19,7 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
-def main(address_mode: bool = True):
+def main():
     length = 1024
     time = np.linspace(0, 1, length)
     signal = generate_random_signal(length)
@@ -30,11 +31,6 @@ def main(address_mode: bool = True):
             ROOT / "neural",
         ],
     )
-
-    if address_mode:
-        from .network_with_addresses import Network, Pipeline
-    else:
-        from .network_with_separate_buffers import Network, Pipeline
 
     network = Network(
         device,
@@ -79,11 +75,7 @@ def main(address_mode: bool = True):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--address-mode', action='store_true', default=False)
-    args = parser.parse_args()
-
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main(args.address_mode)
+    main()

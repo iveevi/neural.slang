@@ -29,13 +29,14 @@ class Network:
         layers = [ linear_to_numpy(nn.Linear(s[0], s[1])).flatten() for s in self.layer_shapes ]
         sizes = [ layer.size for layer in layers ]
 
-        self.layer_addresses = np.cumsum([0, *sizes])[:-1].astype(np.int32)
+        self.layer_addresses_host = np.cumsum([0, *sizes])[:-1].astype(np.int32)
 
         layers = np.ascontiguousarray(np.concatenate(layers, axis=0))
 
         self.parameters = create_buffer(device, layers)
         self.gradients = create_buffer(device, np.zeros_like(layers))
         self.optimizer_states = create_buffer(device, np.zeros_like(layers).repeat(3, axis=0), 3 * 4)
+        self.layer_addresses = create_buffer(device, self.layer_addresses_host)
         self.parameter_count = layers.size
 
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
@@ -59,34 +60,43 @@ class Network:
         )
 
     def copy_weights(self, layer_index: int, layer: nn.Linear):
-        begin = self.layer_addresses[layer_index]
-        if layer_index + 1 >= len(self.layer_addresses):
+        begin = self.layer_addresses_host[layer_index]
+        if layer_index + 1 >= len(self.layer_addresses_host):
             end = self.parameter_count
         else:
-            end = self.layer_addresses[layer_index + 1]
+            end = self.layer_addresses_host[layer_index + 1]
         base = self.parameters.to_numpy().view(np.float32)
         base[begin:end] = linear_to_numpy(layer).flatten()
         self.parameters = create_buffer(self.device, base)
 
     def layer_to_numpy(self, layer_index: int) -> np.ndarray:
         shape = self.layer_shapes[layer_index]
-        begin = self.layer_addresses[layer_index]
-        if layer_index + 1 >= len(self.layer_addresses):
+        begin = self.layer_addresses_host[layer_index]
+        if layer_index + 1 >= len(self.layer_addresses_host):
             end = self.parameter_count
         else:
-            end = self.layer_addresses[layer_index + 1]
+            end = self.layer_addresses_host[layer_index + 1]
         base = self.parameters.to_numpy().view(np.float32)
         return base[begin:end].reshape(shape[0] + 1, shape[1])
 
     def layer_gradients_to_numpy(self, layer_index: int) -> np.ndarray:
         shape = self.layer_shapes[layer_index]
-        begin = self.layer_addresses[layer_index]
-        if layer_index + 1 >= len(self.layer_addresses):
+        begin = self.layer_addresses_host[layer_index]
+        if layer_index + 1 >= len(self.layer_addresses_host):
             end = self.parameter_count
         else:
-            end = self.layer_addresses[layer_index + 1]
+            end = self.layer_addresses_host[layer_index + 1]
         base = self.gradients.to_numpy().view(np.float32)
         return base[begin:end].reshape(shape[0] + 1, shape[1])
+
+    def dict(self):
+        return {
+            "parameters": self.parameters,
+            "gradients": self.gradients,
+            "states": self.optimizer_states,
+            "layerAddresses": self.layer_addresses,
+            "parameterCount": self.parameter_count,
+        }
 
 class Pipeline:
     @staticmethod
@@ -102,13 +112,13 @@ class Pipeline:
         export static const int In = {input};
         export static const int Out = {output};
         export static const int Hidden = {hidden};
-        export static const int Layers = {hidden_layers + 2};
+        export static const int HiddenLayers = {hidden_layers};
         export static const int Levels = {levels};
         """
         return device.load_module_from_source("specialization", source)
 
     def __init__(self, device: spy.Device, network: Network):
-        SOURCE = ROOT / "examples" / "slang" / "network_with_addresses.slang"
+        SOURCE = ROOT / "examples" / "slang" / "network_with_addresses_kernels.slang"
         self.device = device
         self.signal_module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(
@@ -137,8 +147,7 @@ class Pipeline:
         
         self.forward_kernel.dispatch(
             thread_count=(elements, 1, 1),
-            parameters=network.parameters,
-            layerAddresses=network.layer_addresses,
+            network=network.dict(),
             inputBuffer=input,
             outputBuffer=output,
         )
@@ -148,9 +157,7 @@ class Pipeline:
 
         self.backward_kernel.dispatch(
             thread_count=(elements, 1, 1),
-            parameters=network.parameters,
-            gradients=network.gradients,
-            layerAddresses=network.layer_addresses,
+            network=network.dict(),
             inputBuffer=input,
             expectedBuffer=expected,
             boost=1.0/elements,
@@ -159,9 +166,7 @@ class Pipeline:
     def optimize(self, network: Network, dispatch_size: int = 1024):
         self.optimize_kernel.dispatch(
             thread_count=(dispatch_size, 1, 1),
-            parameters=network.parameters,
-            gradients=network.gradients,
-            states=network.optimizer_states,
+            network=network.dict(),
             count=network.parameter_count,
             dispatchSize=dispatch_size,
         )

@@ -1,11 +1,15 @@
-module network_with_addresses;
-
 import neural;
 
-// Neural network structure
-public struct NetworkWithAddresses<int In, int Out, int Hidden, int Levels, int HiddenLayers, ActivationType, OptimizerType>
+extern static const int In;
+extern static const int Out;
+extern static const int Hidden;
+extern static const int HiddenLayers;
+extern static const int Levels;
+
+typealias OptimizerType = Adam<float>;
+
+public struct NetworkWithAddresses<int In, int Out, int Hidden, int Levels, int HiddenLayers, ActivationType>
     where ActivationType : IActivation<float>
-    where OptimizerType : IOptimizer<float>
 {
     typealias StorageType = StructuredBufferStorage<float>;
     typealias StorageDiffType = DifferentialPtrPair<StorageType>;
@@ -101,3 +105,55 @@ public struct NetworkWithAddresses<int In, int Out, int Hidden, int Levels, int 
         }
     }
 };
+
+typealias Network = NetworkWithAddresses<In, Out, Hidden, Levels, HiddenLayers, ReLU<float>>;
+typealias InputVec = Network.InputVec;
+typealias OutputVec = Network.OutputVec;
+
+// uniform Network network;
+
+// Neural network inference
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void forward(
+    uniform Network network,
+    RWStructuredBuffer<InputVec> inputBuffer,
+    RWStructuredBuffer<OutputVec> outputBuffer,
+    uint3 thread_id : SV_DispatchThreadID)
+{
+    // TODO: pad up to 64 threads for saturated work groups
+    int tid = thread_id.x;
+
+    let input = InputVec(inputBuffer[tid]);
+    let output = network.forward(input);
+    outputBuffer[tid] = output;
+}
+
+// Neural network training
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void backward(
+    uniform Network network,
+	RWStructuredBuffer<InputVec> inputBuffer,
+    RWStructuredBuffer<OutputVec> expectedBuffer,
+	uint3 thread_id : SV_DispatchThreadID,
+    uniform float boost)
+{
+    int tid = thread_id.x;
+
+    let input = InputVec(inputBuffer[tid]);
+    let expected = OutputVec(expectedBuffer[tid]);
+
+    network.backward(input, expected, boost);
+}
+
+// Neural network optimization
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void optimize(
+    uniform Network network,
+    uint3 thread_id : SV_DispatchThreadID,
+    uniform uint dispatchSize)
+{
+    network.optimize(thread_id.x, dispatchSize);
+}
