@@ -7,8 +7,8 @@ import pathlib
 from PIL import Image
 from tqdm import tqdm
 
-from common.util import *
-from ..network_with_separate_buffers import Network, TrainingPipeline
+from common import *
+from ..networks.separate_buffers import Network, TrainingPipeline
 
 
 

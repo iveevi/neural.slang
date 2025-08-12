@@ -10,13 +10,10 @@ import argparse
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from common.util import *
-from ..pytorch_networks import PyTorchNetwork
-from ..network_with_addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
-from ..network_with_separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
-
-
-
+from common import *
+from ..networks.pytorch import PyTorchNetwork
+from ..networks.addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
+from ..networks.separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
 
 
 def generate_random_signal(length: int) -> np.ndarray:

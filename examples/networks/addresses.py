@@ -2,7 +2,7 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
-from common.util import *
+from common import *
 
 
 # TODO: base class for all networks
@@ -30,21 +30,21 @@ class Network:
 
         layers = np.ascontiguousarray(np.concatenate(layers, axis=0))
 
-        self.parameters = create_float_buffer(device, layers)
-        self.gradients = create_float_buffer(device, np.zeros_like(layers))
-        self.optimizer_states = create_float_tensor_buffer(device, np.zeros_like(layers).repeat(3, axis=0), 3)
-        self.layer_addresses = create_float_buffer(device, self.layer_addresses_host)
+        self.parameters = create_buffer_32b(device, layers)
+        self.gradients = create_buffer_32b(device, np.zeros_like(layers))
+        self.optimizer_states = create_tensor_32b(device, np.zeros_like(layers).repeat(3, axis=0), 3)
+        self.layer_addresses = create_buffer_32b(device, self.layer_addresses_host)
         self.parameter_count = layers.size
 
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
         assert input.ndim > 1
         assert input.shape[-1] == self.input
-        return create_float_tensor_buffer(self.device, input, self.input)
+        return create_tensor_32b(self.device, input, self.input)
 
     def output_vec(self, output: np.ndarray) -> spy.Buffer:
         assert output.ndim > 1
         assert output.shape[-1] == self.output
-        return create_float_tensor_buffer(self.device, output, self.output)
+        return create_tensor_32b(self.device, output, self.output)
 
     def copy_weights(self, layer_index: int, layer: nn.Linear):
         begin = self.layer_addresses_host[layer_index]
@@ -54,7 +54,7 @@ class Network:
             end = self.layer_addresses_host[layer_index + 1]
         base = self.parameters.to_numpy().view(np.float32)
         base[begin:end] = linear_to_numpy(layer).flatten()
-        self.parameters = create_float_buffer(self.device, base)
+        self.parameters = create_buffer_32b(self.device, base)
 
     def layer_to_numpy(self, layer_index: int) -> np.ndarray:
         shape = self.layer_shapes[layer_index]
@@ -110,7 +110,7 @@ class TrainingPipeline:
         self.device = device
 
         # Load modules
-        self.signal_module = device.load_module(str(SOURCE))
+        self.module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(
             device,
             network.hidden,
@@ -121,25 +121,25 @@ class TrainingPipeline:
         )
 
         # Compile forward pass kernel
-        forward_entry_point = self.signal_module.entry_point("forward")
+        forward_entry_point = self.module.entry_point("forward")
         foward_program = device.link_program(
-            modules=[self.signal_module, self.specialization_module],
+            modules=[self.module, self.specialization_module],
             entry_points=[forward_entry_point],
         )
         self.forward_pipeline = device.create_compute_pipeline(foward_program)
 
         # Compile backward pass kernel
-        backward_entry_point = self.signal_module.entry_point("backward")
+        backward_entry_point = self.module.entry_point("backward")
         backward_program = device.link_program(
-            modules=[self.signal_module, self.specialization_module],
+            modules=[self.module, self.specialization_module],
             entry_points=[backward_entry_point],
         )
         self.backward_pipeline = device.create_compute_pipeline(backward_program)
 
         # Compile optimizer pass kernel
-        optimize_entry_point = self.signal_module.entry_point("optimize")
+        optimize_entry_point = self.module.entry_point("optimize")
         optimize_program = device.link_program(
-            modules=[self.signal_module, self.specialization_module],
+            modules=[self.module, self.specialization_module],
             entry_points=[optimize_entry_point],
         )
         self.optimize_pipeline = device.create_compute_pipeline(optimize_program)

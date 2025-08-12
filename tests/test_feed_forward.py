@@ -3,7 +3,7 @@ import pytest
 import slangpy as spy
 import torch
 from .conftest import assert_close
-from common.util import *
+from common import *
 
 
 # TODO: also parameterize activation functions with link-time specialization

@@ -7,8 +7,8 @@ import pathlib
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from common.util import *
-from ..network_with_separate_buffers import Network, TrainingPipeline
+from common import *
+from ..networks.separate_buffers import Network, TrainingPipeline
 
 
 

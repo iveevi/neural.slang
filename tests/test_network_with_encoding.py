@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 from .conftest import assert_close
-from common.util import *
+from common import *
 
 
 def create_specialization_module(device, in_size, levels, hidden_size, out_size):
@@ -72,12 +72,12 @@ def test_network_with_encoding(device, make_kernel, random_seed, in_size, levels
     specialization_module = create_specialization_module(device, in_size, levels, hidden_size, out_size)
     kernel = make_kernel("network_with_encoding", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_for_data(device, test_inputs, in_size * 4)
-    output_buffer = create_output_buffer(device, batch_size, out_size)
-    layer1_buffer = create_buffer_for_data(device, layer1_params, 4)
-    layer2_buffer = create_buffer_for_data(device, layer2_params, 4)
-    layer3_buffer = create_buffer_for_data(device, layer3_params, 4)
-    layer4_buffer = create_buffer_for_data(device, layer4_params, 4)
+    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, in_size * 4)
+    output_buffer = create_result_buffer_32b(device, batch_size, out_size)
+    layer1_buffer = create_buffer_from_numpy_32b(device, layer1_params, 4)
+    layer2_buffer = create_buffer_from_numpy_32b(device, layer2_params, 4)
+    layer3_buffer = create_buffer_from_numpy_32b(device, layer3_params, 4)
+    layer4_buffer = create_buffer_from_numpy_32b(device, layer4_params, 4)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -118,17 +118,17 @@ def test_network_with_encoding_derivative(device, make_kernel, random_seed, in_s
     specialization_module = create_specialization_module(device, in_size, levels, hidden_size, out_size)
     kernel = make_kernel("network_with_encoding_derivative", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_for_data(device, test_inputs, in_size * 4)
-    layer1_buffer = create_buffer_for_data(device, layer1_params, 4)
-    layer2_buffer = create_buffer_for_data(device, layer2_params, 4)
-    layer3_buffer = create_buffer_for_data(device, layer3_params, 4)
-    layer4_buffer = create_buffer_for_data(device, layer4_params, 4)
+    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, in_size * 4)
+    layer1_buffer = create_buffer_from_numpy_32b(device, layer1_params, 4)
+    layer2_buffer = create_buffer_from_numpy_32b(device, layer2_params, 4)
+    layer3_buffer = create_buffer_from_numpy_32b(device, layer3_params, 4)
+    layer4_buffer = create_buffer_from_numpy_32b(device, layer4_params, 4)
     
-    dinput_buffer = create_output_buffer(device, batch_size, in_size)
-    dlayer1_buffer = create_output_buffer(device, layer1_params.shape[0], layer1_params.shape[1])
-    dlayer2_buffer = create_output_buffer(device, layer2_params.shape[0], layer2_params.shape[1])
-    dlayer3_buffer = create_output_buffer(device, layer3_params.shape[0], layer3_params.shape[1])
-    dlayer4_buffer = create_output_buffer(device, layer4_params.shape[0], layer4_params.shape[1])
+    dinput_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    dlayer1_buffer = create_result_buffer_32b(device, layer1_params.shape[0], layer1_params.shape[1])
+    dlayer2_buffer = create_result_buffer_32b(device, layer2_params.shape[0], layer2_params.shape[1])
+    dlayer3_buffer = create_result_buffer_32b(device, layer3_params.shape[0], layer3_params.shape[1])
+    dlayer4_buffer = create_result_buffer_32b(device, layer4_params.shape[0], layer4_params.shape[1])
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -203,8 +203,8 @@ def test_network_with_encoding_address(device, make_kernel, random_seed, in_size
     specialization_module = create_specialization_module(device, in_size, levels, hidden_size, out_size)
     kernel = make_kernel("network_with_encoding_address", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_for_data(device, test_inputs, in_size * 4)
-    output_buffer = create_output_buffer(device, batch_size, out_size)
+    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, in_size * 4)
+    output_buffer = create_result_buffer_32b(device, batch_size, out_size)
     
     # Calculate total parameter size and addresses
     layer1_size = layer1_params.size
@@ -232,7 +232,7 @@ def test_network_with_encoding_address(device, make_kernel, random_seed, in_size
     combined_params[layer3_address:layer3_address + layer3_size] = layer3_params.flatten()
     combined_params[layer4_address:layer4_address + layer4_size] = layer4_params.flatten()
     
-    parameters_buffer = create_buffer_for_data(device, combined_params, 4)
+    parameters_buffer = create_buffer_from_numpy_32b(device, combined_params, 4)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -276,8 +276,8 @@ def test_network_with_encoding_address_derivative(device, make_kernel, random_se
     specialization_module = create_specialization_module(device, in_size, levels, hidden_size, out_size)
     kernel = make_kernel("network_with_encoding_address_derivative", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_for_data(device, test_inputs, in_size * 4)
-    dinput_buffer = create_output_buffer(device, batch_size, in_size)
+    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, in_size * 4)
+    dinput_buffer = create_result_buffer_32b(device, batch_size, in_size)
     
     # Calculate total parameter size and addresses
     layer1_size = layer1_params.size
@@ -305,10 +305,10 @@ def test_network_with_encoding_address_derivative(device, make_kernel, random_se
     combined_params[layer3_address:layer3_address + layer3_size] = layer3_params.flatten()
     combined_params[layer4_address:layer4_address + layer4_size] = layer4_params.flatten()
     
-    parameters_buffer = create_buffer_for_data(device, combined_params, 4)
+    parameters_buffer = create_buffer_from_numpy_32b(device, combined_params, 4)
     
     # Create gradient buffer for combined parameters (same size as combined parameters)
-    dparameters_buffer = create_buffer_for_data(device, np.zeros_like(combined_params), 4)
+    dparameters_buffer = create_buffer_from_numpy_32b(device, np.zeros_like(combined_params), 4)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),

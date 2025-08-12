@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 from .conftest import assert_close
-from common.util import *
+from common import *
 
 
 @pytest.mark.parametrize("seed", [0])
@@ -22,15 +22,15 @@ def test_sgd(device, make_kernel, seed, num_params, lr, momentum):
     
     kernel = make_kernel("sgd")
     
-    parameters_buffer = create_buffer_for_data(device, initial_params.copy(), 4)
-    state_buffer = create_buffer_for_data(device, sgd_state_data, 4)  # 1 float per state
+    parameters_buffer = create_buffer_from_numpy_32b(device, initial_params.copy(), 4)
+    state_buffer = create_buffer_from_numpy_32b(device, sgd_state_data, 4)  # 1 float per state
     
     pytorch_params = torch.tensor(initial_params.copy(), requires_grad=True)
     pytorch_optimizer = torch.optim.SGD([pytorch_params], lr=lr, momentum=momentum)
     
     for iteration in range(num_iterations):
         gradients = np.random.randn(num_params).astype(np.float32) * 0.01
-        gradients_buffer = create_buffer_for_data(device, gradients, 4)
+        gradients_buffer = create_buffer_from_numpy_32b(device, gradients, 4)
         
         kernel.dispatch(
             thread_count=(num_params, 1, 1),
@@ -83,15 +83,15 @@ def test_adam(device, make_kernel, seed, num_params):
     
     kernel = make_kernel("adam")
     
-    parameters_buffer = create_buffer_for_data(device, initial_params.copy(), 4)
-    state_buffer = create_buffer_for_data(device, adam_state_data, 3 * 4)  # 3 floats per state
+    parameters_buffer = create_buffer_from_numpy_32b(device, initial_params.copy(), 4)
+    state_buffer = create_buffer_from_numpy_32b(device, adam_state_data, 3 * 4)  # 3 floats per state
     
     pytorch_params = torch.tensor(initial_params.copy(), requires_grad=True)
     pytorch_optimizer = torch.optim.Adam([pytorch_params], lr=lr, betas=(beta1, beta2), eps=eps)
     
     for iteration in range(num_iterations):
         gradients = np.random.randn(num_params).astype(np.float32) * 0.01
-        gradients_buffer = create_buffer_for_data(device, gradients, 4)
+        gradients_buffer = create_buffer_from_numpy_32b(device, gradients, 4)
         
         kernel.dispatch(
             thread_count=(num_params, 1, 1),

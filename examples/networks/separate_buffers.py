@@ -2,7 +2,7 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
-from common.util import *
+from common import *
 
 
 class Layer:
@@ -15,15 +15,15 @@ class Layer:
         np_adam_states = np.zeros(np_params.size * 3, dtype=np.float32)
         # np_sgd_states = np.zeros(np_params.size, dtype=np.float32)
 
-        self.parameters = create_float_buffer(device, np_params)
-        self.gradients = create_float_buffer(device, np.zeros_like(np_params))
-        self.optimizer_states = create_float_tensor_buffer(device, np_adam_states, 3)
+        self.parameters = create_buffer_32b(device, np_params)
+        self.gradients = create_buffer_32b(device, np.zeros_like(np_params))
+        self.optimizer_states = create_tensor_32b(device, np_adam_states, 3)
         # self.optimizer_states = create_float_buffer(device, np_sgd_states)
 
         self.copy_weights(nn.Linear(in_size, out_size))
 
     def copy_weights(self, linear: nn.Linear):
-        self.parameters = create_float_buffer(self.device, linear_to_numpy(linear))
+        self.parameters = create_buffer_32b(self.device, linear_to_numpy(linear))
 
     def parameters_to_numpy(self) -> np.ndarray:
         return self.parameters.to_numpy().view(np.float32).reshape(self.in_size + 1, self.out_size)
@@ -82,12 +82,12 @@ class Network:
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
         assert input.ndim > 1
         assert input.shape[-1] == self.input
-        return create_float_tensor_buffer(self.device, input, self.input)
+        return create_tensor_32b(self.device, input, self.input)
 
     def output_vec(self, output: np.ndarray) -> spy.Buffer:
         assert output.ndim > 1
         assert output.shape[-1] == self.output
-        return create_float_tensor_buffer(self.device, output, self.output)
+        return create_tensor_32b(self.device, output, self.output)
 
     def layer_to_numpy(self, layer_index: int) -> np.ndarray:
         return self.layers[layer_index].parameters_to_numpy()
@@ -116,7 +116,7 @@ class TrainingPipeline:
     def __init__(self, device: spy.Device, network: Network):
         SOURCE = ROOT / "examples" / "slang" / "network_with_separate_buffers_kernels.slang"
         self.device = device
-        self.signal_module = device.load_module(str(SOURCE))
+        self.module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(
             device,
             network.hidden,
@@ -125,16 +125,16 @@ class TrainingPipeline:
             network.output,
         )
         self.forward_kernel = device.create_compute_kernel(device.link_program(
-            modules=[self.signal_module, self.specialization_module],
-            entry_points=[self.signal_module.entry_point("forward")],
+            modules=[self.module, self.specialization_module],
+            entry_points=[self.module.entry_point("forward")],
         ))
         self.backward_kernel = device.create_compute_kernel(device.link_program(
-            modules=[self.signal_module, self.specialization_module],
-            entry_points=[self.signal_module.entry_point("backward")],
+            modules=[self.module, self.specialization_module],
+            entry_points=[self.module.entry_point("backward")],
         ))
         self.optimize_kernel = device.create_compute_kernel(device.link_program(
-            modules=[self.signal_module, self.specialization_module],
-            entry_points=[self.signal_module.entry_point("optimize")],
+            modules=[self.module, self.specialization_module],
+            entry_points=[self.module.entry_point("optimize")],
         ))
 
     def forward(self, network: Network, input: spy.Buffer, output: spy.Buffer):

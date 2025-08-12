@@ -9,10 +9,10 @@ import torch.nn.functional as F
 from PIL import Image
 from tqdm import tqdm
 
-from common.util import *
-from ..pytorch_networks import PyTorchNetwork
-from ..network_with_addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
-from ..network_with_separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
+from common import *
+from ..networks.pytorch import PyTorchNetwork
+from ..networks.addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
+from ..networks.separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
 
 
 

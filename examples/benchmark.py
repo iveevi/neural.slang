@@ -13,13 +13,10 @@ from collections import defaultdict
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from .network_with_separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
-from .network_with_addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
-from .pytorch_networks import PyTorchNetwork
-from common.util import *
-
-
-
+from .networks.separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
+from .networks.addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
+from .networks.pytorch import PyTorchNetwork
+from common import *
 
 
 class ProfilerState:

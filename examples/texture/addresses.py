@@ -7,8 +7,8 @@ import pathlib
 from PIL import Image
 from tqdm import tqdm
 
-from common.util import *
-from ..network_with_addresses import Network, TrainingPipeline
+from common import *
+from ..networks.addresses import Network, TrainingPipeline
 
 
 

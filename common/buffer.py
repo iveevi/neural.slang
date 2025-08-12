@@ -1,6 +1,5 @@
 import slangpy as spy
 import numpy as np
-import torch.nn as nn
 import pathlib
 from typing import List, Optional
 
@@ -11,7 +10,7 @@ ROOT = pathlib.Path(__file__).parent.parent.absolute()
 def create_device(
     additional_include_paths: Optional[List[pathlib.Path]] = None,
 ) -> spy.Device:
-    device_types = [spy.DeviceType.vulkan, spy.DeviceType.metal]
+    device_types = [spy.DeviceType.metal, spy.DeviceType.vulkan]
     
     # Always include neural path
     neural_path = ROOT / "neural"
@@ -35,7 +34,7 @@ def create_device(
     raise RuntimeError(f"Failed to create device with any of {device_types}. Last error: {last_error}")
 
 
-def create_float_buffer(
+def create_buffer_32b(
     device: spy.Device,
     data: np.ndarray,
 ) -> spy.Buffer:
@@ -47,7 +46,7 @@ def create_float_buffer(
     )
 
 
-def create_float_tensor_buffer(
+def create_tensor_32b(
     device: spy.Device,
     data: np.ndarray,
     elements_per_struct: int,
@@ -60,37 +59,18 @@ def create_float_tensor_buffer(
     )
 
 
-def linear_to_numpy(linear: nn.Linear) -> np.ndarray:
-    weights = linear.weight.cpu().detach().numpy().T
-    bias = linear.bias.cpu().detach().numpy().reshape(1, -1)
-    return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
-
-
-def linear_gradients_to_numpy(linear: nn.Linear) -> np.ndarray:
-    assert linear.weight.grad is not None
-    assert linear.bias.grad is not None
-    weights = linear.weight.grad.cpu().detach().numpy().T
-    bias = linear.bias.grad.cpu().detach().numpy().reshape(1, -1)
-    return np.ascontiguousarray(np.concatenate((weights, bias), axis=0).astype(np.float32))
-
-
-def create_buffer_for_data(device: spy.Device, data: np.ndarray, struct_size: int, usage_type: str = "shader_resource") -> spy.Buffer:
-    usage_map = {
-        "shader_resource": spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
-        "constant_buffer": spy.BufferUsage.constant_buffer,
-    }
-    
+def create_buffer_from_numpy_32b(device: spy.Device, data: np.ndarray, elements: int) -> spy.Buffer:
     return device.create_buffer(
         size=data.nbytes,
-        struct_size=struct_size,
-        usage=usage_map.get(usage_type, spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access),
+        struct_size=elements * 4,
+        usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
         data=data,
     )
 
 
-def create_output_buffer(device: spy.Device, batch_size: int, output_size: int, element_size: int = 4) -> spy.Buffer:
+def create_result_buffer_32b(device: spy.Device, batch_size: int, output_size: int) -> spy.Buffer:
     return device.create_buffer(
-        size=batch_size * output_size * element_size,
-        struct_size=output_size * element_size,
+        size=batch_size * output_size * 4,
+        struct_size=output_size * 4,
         usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
     )

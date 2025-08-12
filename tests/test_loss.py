@@ -3,7 +3,7 @@ import pytest
 import slangpy as spy
 import torch
 from .conftest import assert_close
-from common.util import *
+from common import *
 
 
 def create_specialization_module(device, in_size):
@@ -25,9 +25,9 @@ def test_mse_basic(device, make_kernel, random_seed, in_size):
     specialization_module = create_specialization_module(device, in_size)
     kernel = make_kernel("mse", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_for_data(device, input_data, in_size * 4)
-    target_buffer = create_buffer_for_data(device, target_data, in_size * 4)
-    output_buffer = create_output_buffer(device, batch_size, 1)
+    input_buffer = create_buffer_from_numpy_32b(device, input_data, in_size * 4)
+    target_buffer = create_buffer_from_numpy_32b(device, target_data, in_size * 4)
+    output_buffer = create_result_buffer_32b(device, batch_size, 1)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
