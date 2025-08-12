@@ -6,24 +6,25 @@ import neural;
 public struct NetworkWithAddresses<
     int In,
     int Out,
+    int EncodedOut,
     int Hidden,
     int Levels,
     int HiddenLayers,
     Encoder,
     Activation
 >
-    where Encoder : IEncoder<float, In>
+    where Encoder : IEncoder<float, In, EncodedOut>
     where Activation : IActivation<float>
 {
     typealias StorageType = StructuredBufferStorage<float>;
     typealias StorageDiffType = DifferentialPtrPair<StorageType>;
 
-    typealias FirstLayer = FeedForward<float, Encoder.Out, Hidden, StorageType, Activation>;
+    typealias FirstLayer = FeedForward<float, EncodedOut, Hidden, StorageType, Activation>;
     typealias HiddenLayer = FeedForward<float, Hidden, Hidden, StorageType, Activation>;
     typealias LastLayer = FeedForward<float, Hidden, Out, StorageType, Identity<float>>;
 
     typealias HiddenVec = InlineVector<float, Hidden>;
-    typealias EncodedVec = InlineVector<float, Encoder.Out>;
+    typealias EncodedVec = InlineVector<float, EncodedOut>;
 
     public typealias InputVec = InlineVector<float, In>;
     public typealias OutputVec = InlineVector<float, Out>;

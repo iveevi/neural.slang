@@ -17,7 +17,7 @@ class Network:
         self.levels = levels
         self.input = input
         self.output = output
-        
+
         input_size = self.input if levels == 0 else 2 * levels * self.input
 
         self.layer_shapes = [
@@ -119,7 +119,7 @@ class TrainingPipeline:
 
     def __init__(self, device: spy.Device, network: Network):
         SOURCE = ROOT / "examples" / "slang" / "network_with_addresses_kernels.slang"
-        
+
         self.device = device
 
         # Load modules

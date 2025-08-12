@@ -10,6 +10,7 @@ extern static const int Levels;
 typealias Network = NetworkWithAddresses<
     In,
     Out,
+    2 * Levels * In,
     Hidden,
     Levels,
     HiddenLayers,

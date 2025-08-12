@@ -4,13 +4,10 @@ implementing neural;
 // Identity encoder //
 //////////////////////
 
-public struct IdentityEncoder<T, int N> : IEncoder<T, N>
+public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
-    public static const int In = N;
-    public static const int Out = N;
-
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, N>
@@ -27,13 +24,10 @@ public struct IdentityEncoder<T, int N> : IEncoder<T, N>
 // Spherical harmonics //
 /////////////////////////
 
-public struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3>
+public struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 2 * Levels + 1>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
-    public static const int In = 3;
-    public static const int Out = 2 * Levels + 1;
-
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, 3>
@@ -49,13 +43,10 @@ public struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3>
 // Frequency encoder //
 ///////////////////////
 
-public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim>
+public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels * Dim>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
-    public static const int In = Dim;
-    public static const int Out = 2 * Levels * Dim;
-
     [BackwardDerivative(evalBwd)]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>

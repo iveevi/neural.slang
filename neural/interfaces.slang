@@ -95,12 +95,10 @@ public interface IOptimizer<T>
 }
 
 // Encoder interface
-public interface IEncoder<T, int In>
+public interface IEncoder<T, int In, int Out>
     where T : __BuiltinFloatingPointType
             where T : IArithmeticAtomicable
 {
-    public static const int Out;
-
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, In>
