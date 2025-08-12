@@ -1,5 +1,11 @@
 implementing neural;
 
+// Extensions for scalar types
+public interface IConvertibleToInt
+{
+    int toInt();
+}
+
 // Storage interfaces
 public interface IStorage<T> : IDifferentiablePtrType
     where T : IArithmeticAtomicable
@@ -8,7 +14,7 @@ public interface IStorage<T> : IDifferentiablePtrType
     public associatedtype Address;
 
     // Handle for matrix multiplication, likely
-    // needs to conform to an appopriate interface 
+    // needs to conform to an appopriate interface
     public associatedtype BufferType;
 
     public T read(Address address);
@@ -46,7 +52,7 @@ public interface IVector<T, int N> : IArithmetic, IDifferentiable
         get;
         set;
     }
-    
+
     public OutputVector apply<int OutputSize, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address
@@ -55,7 +61,7 @@ public interface IVector<T, int N> : IArithmetic, IDifferentiable
         where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector;
-    
+
     // Specific methods required for ML operations
     This max(T other);
     This max(This other);

@@ -104,26 +104,128 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
     }
 }
 
+////////////////
+// Dense grid //
+////////////////
+
+public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable & IConvertibleToInt
+    where Storage : IStorage<T>
+{
+    Array<Storage.Address, Levels> addresses;
+    int gridResolution;
+
+    public T evalLevel<InputVector>(Storage storage, Storage.Address levelAddressOffset, InputVector input, int level, int feature)
+        where InputVector : IVector<T, Dim>
+    {
+        if (Dim == 1)
+        {
+            // Linear interpolation
+            let index = input[0] * T(gridResolution);
+            let index0 = floor(index);
+            let index1 = ceil(index);
+
+            let t = index - index0;
+            let value0 = storage.read(Storage.getOffset(levelAddressOffset, index0.toInt()));
+            let value1 = storage.read(Storage.getOffset(levelAddressOffset, index1.toInt()));
+            return lerp(value0, value1, t);
+        }
+        else if (Dim == 2)
+        {
+            // Bilinear interpolation
+            let x = input[0] * T(gridResolution);
+            let y = input[1] * T(gridResolution);
+            
+            let x0 = floor(x);
+            let x1 = ceil(x);
+            let y0 = floor(y);
+            let y1 = ceil(y);
+            
+            let tx = x - x0;
+            let ty = y - y0;
+            
+            // Calculate grid dimensions
+            let gridSize = gridResolution + 1;
+            let gridElementsPerFeature = gridSize * gridSize;
+            
+            // Calculate grid indices for the four corners
+            let idx00 = y0.toInt() * gridSize + x0.toInt();
+            let idx01 = y1.toInt() * gridSize + x0.toInt();
+            let idx10 = y0.toInt() * gridSize + x1.toInt();
+            let idx11 = y1.toInt() * gridSize + x1.toInt();
+            
+            // Read values from the four corners with feature offset
+            let value00 = storage.read(Storage.getOffset(levelAddressOffset, idx00));
+            let value01 = storage.read(Storage.getOffset(levelAddressOffset, idx01));
+            let value10 = storage.read(Storage.getOffset(levelAddressOffset, idx10));
+            let value11 = storage.read(Storage.getOffset(levelAddressOffset, idx11));
+            
+            // Perform bilinear interpolation
+            let lerp0 = lerp(value00, value10, tx);
+            let lerp1 = lerp(value01, value11, tx);
+            return lerp(lerp0, lerp1, ty);
+        }
+        else if (Dim == 3)
+        {
+            static_assert(false, "Not implemented");
+        }
+        else
+        {
+            static_assert(false, "Not implemented");
+        }
+    }
+
+    [BackwardDifferentiable]
+    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+        where InputVector : IVector<T, Dim>
+        where OutputVector : IVector<T, Features * Levels>
+    {
+        OutputVector output;
+        [ForceUnroll]
+        for (int level = 0; level < Levels; level++)
+        {
+            [ForceUnroll]
+            for (int feature = 0; feature < Features; feature++)
+            {
+                output[level * Features + feature] = evalLevel<InputVector>(
+                    storage,
+                    addresses[level],
+                    input,
+                    level,
+                    feature
+                );
+            }
+        }
+
+        return output;
+    }
+}
+
 ///////////////
 // Hash grid //
 ///////////////
 
-struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+public struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable & IConvertibleToInt
     where Storage : IStorage<T>
 {
-    Storage.Address address;
-    int resolution;
-    int size;
+    Array<Storage.Address, Levels> addresses;
+    int gridResolution;
+    int hashTableSize;
 
     [BackwardDifferentiable]
-    OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, Dim>
         where OutputVector : IVector<T, Features * Levels>
     {
         OutputVector output;
         static_assert(false, "Not implemented");
         return output;
+    }
+
+    static uint spatialHash<InputVector>(InputVector input)
+        where InputVector : IVector<T, Dim>
+    {
+        static_assert(false, "Not implemented");
     }
 }
