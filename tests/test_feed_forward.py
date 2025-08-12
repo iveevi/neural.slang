@@ -281,3 +281,70 @@ def test_feed_forward_bindless(device, make_kernel, in_size, out_size, random_se
     expected = torch.relu(linear_output).detach().numpy()
     
     assert_close(output, expected)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [32, 64, 128])
+@pytest.mark.parametrize("out_size", [32, 64, 128])
+def test_feed_forward_bindless_derivative(device, make_kernel, in_size, out_size, random_seed):
+    np.random.seed(random_seed)
+    
+    batch_size = 16
+    linear_layer, weights, bias = create_bindless_linear_layer_data(in_size, out_size, random_seed)
+    
+    specialization_module = create_specialization_module(device, in_size, out_size)
+    kernel = make_kernel("feed_forward_bindless_derivative", link_modules=[specialization_module])
+    
+    input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+    
+    input_buffer = create_buffer_32b(device, input_data, in_size)
+    
+    dinput_buffer = create_buffer_32b(device, np.zeros_like(input_data), in_size)
+    
+    weights_buffer = create_buffer_32b(device, weights)
+    
+    bias_buffer = create_buffer_32b(device, bias)
+    
+    dweights_buffer = create_buffer_32b(device, np.zeros_like(weights))
+    
+    dbias_buffer = create_buffer_32b(device, np.zeros_like(bias))
+
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "weights": weights_buffer.descriptor_handle_rw,
+                "biases": bias_buffer.descriptor_handle_rw,
+                "dweights": dweights_buffer.descriptor_handle_rw,
+                "dbiases": dbias_buffer.descriptor_handle_rw,
+                "input": input_buffer,
+                "dinput": dinput_buffer,
+            }
+        },
+    )
+    
+    input_derivatives = dinput_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
+    weights_derivatives = dweights_buffer.to_numpy().view(np.float32).reshape(weights.shape)
+    bias_derivatives = dbias_buffer.to_numpy().view(np.float32).reshape(bias.shape)
+    
+    input_torch = torch.tensor(input_data, requires_grad=True)
+    
+    linear_layer.weight.requires_grad_(True)
+    linear_layer.bias.requires_grad_(True)
+    
+    output = torch.relu(linear_layer(input_torch))
+    
+    grad_output = torch.ones_like(output)
+    
+    output.backward(grad_output)
+    
+    assert input_torch.grad is not None, "Input gradients were not computed"
+    assert linear_layer.weight.grad is not None, "Weight gradients were not computed"
+    assert linear_layer.bias.grad is not None, "Bias gradients were not computed"
+    
+    expected_input_derivatives = input_torch.grad.detach().numpy()
+    expected_weights_derivatives, expected_bias_derivatives = linear_gradients_to_bindless_numpy(linear_layer)
+    
+    assert_close(input_derivatives, expected_input_derivatives, rtol=1e-5, atol=1e-6)
+    assert_close(weights_derivatives, expected_weights_derivatives, rtol=1e-5, atol=1e-6)
+    assert_close(bias_derivatives, expected_bias_derivatives, rtol=1e-5, atol=1e-6)
