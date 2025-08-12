@@ -24,8 +24,8 @@ def test_relu(device, make_kernel, random_seed, in_size):
     specialization_module = create_specialization_module(device, in_size)
     kernel = make_kernel("relu", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_from_numpy_32b(device, data, 4 * in_size)
-    output_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -53,8 +53,8 @@ def test_relu_derivative(device, make_kernel, random_seed, in_size):
     specialization_module = create_specialization_module(device, in_size)
     kernel = make_kernel("relu_derivative", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_from_numpy_32b(device, data, 4 * in_size)
-    output_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -95,9 +95,9 @@ def test_leaky_relu(device, make_kernel, random_seed, in_size, alpha):
     specialization_module = create_specialization_module(device, in_size)
     kernel = make_kernel("leaky_relu", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_from_numpy_32b(device, data, 4 * in_size)
-    output_buffer = create_result_buffer_32b(device, batch_size, in_size)
-    alpha_buffer = create_buffer_from_numpy_32b(device, np.array([alpha], dtype=np.float32), 4)
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    alpha_buffer = create_buffer_32b(device, np.array([alpha], dtype=np.float32))
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -127,9 +127,9 @@ def test_leaky_relu_derivative(device, make_kernel, random_seed, in_size, alpha)
     specialization_module = create_specialization_module(device, in_size)
     kernel = make_kernel("leaky_relu_derivative", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_from_numpy_32b(device, data, 4 * in_size)
-    output_buffer = create_result_buffer_32b(device, batch_size, in_size)
-    alpha_buffer = create_buffer_from_numpy_32b(device, np.array([alpha], dtype=np.float32), 4)
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    alpha_buffer = create_buffer_32b(device, np.array([alpha], dtype=np.float32))
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),

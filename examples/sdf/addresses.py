@@ -31,8 +31,8 @@ def main():
 
     device = create_device()
 
-    vertex_buffer = create_buffer_from_numpy_32b(device, mesh.vertices, 3)
-    face_buffer = create_buffer_from_numpy_32b(device, mesh.faces, 3)
+    vertex_buffer = create_buffer_32b(device, mesh.vertices, 3)
+    face_buffer = create_buffer_32b(device, mesh.faces, 3)
 
     print('vertex_buffer', vertex_buffer.size)
     print('face_buffer', face_buffer.size)

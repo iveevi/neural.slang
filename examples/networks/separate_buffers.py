@@ -1,4 +1,3 @@
-import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
@@ -17,7 +16,7 @@ class Layer:
 
         self.parameters = create_buffer_32b(device, np_params)
         self.gradients = create_buffer_32b(device, np.zeros_like(np_params))
-        self.optimizer_states = create_tensor_32b(device, np_adam_states, 3)
+        self.optimizer_states = create_buffer_32b(device, np_adam_states, 3)
         # self.optimizer_states = create_float_buffer(device, np_sgd_states)
 
         self.copy_weights(nn.Linear(in_size, out_size))
@@ -82,12 +81,12 @@ class Network:
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
         assert input.ndim > 1
         assert input.shape[-1] == self.input
-        return create_tensor_32b(self.device, input, self.input)
+        return create_buffer_32b(self.device, input, self.input)
 
     def output_vec(self, output: np.ndarray) -> spy.Buffer:
         assert output.ndim > 1
         assert output.shape[-1] == self.output
-        return create_tensor_32b(self.device, output, self.output)
+        return create_buffer_32b(self.device, output, self.output)
 
     def layer_to_numpy(self, layer_index: int) -> np.ndarray:
         return self.layers[layer_index].parameters_to_numpy()

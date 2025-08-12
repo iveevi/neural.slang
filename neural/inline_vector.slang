@@ -323,11 +323,11 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        var output = OutputVector(T(0.0));
+        var output = OutputVector();
 
         [ForceUnroll]
         for (int i = 0; i < OutputSize; i++)
-            output[i] = weights.getOffset(N * OutputSize + i).read();
+            output[i] = biases.getOffset(i).read();
 
         // TODO: transpose if N >> OutputSize or OutputSize < 4
         [MaxIters(N)]

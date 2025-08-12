@@ -54,13 +54,13 @@ def test_network_without_encoding(device, make_kernel, random_seed, in_size, hid
     specialization_module = create_specialization_module(device, in_size, hidden_size, out_size)
     kernel = make_kernel("network_without_encoding", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, 4 * in_size)
-    output_buffer = create_result_buffer_32b(device, batch_size, out_size)
+    input_buffer = create_buffer_32b(device, test_inputs, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, out_size)
     
-    layer1_buffer = create_buffer_from_numpy_32b(device, layer1_params, 4)
-    layer2_buffer = create_buffer_from_numpy_32b(device, layer2_params, 4)
-    layer3_buffer = create_buffer_from_numpy_32b(device, layer3_params, 4)
-    layer4_buffer = create_buffer_from_numpy_32b(device, layer4_params, 4)
+    layer1_buffer = create_buffer_32b(device, layer1_params)
+    layer2_buffer = create_buffer_32b(device, layer2_params)
+    layer3_buffer = create_buffer_32b(device, layer3_params)
+    layer4_buffer = create_buffer_32b(device, layer4_params)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -102,20 +102,20 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed, i
     kernel = make_kernel("network_without_encoding_derivative", link_modules=[specialization_module])
     
     # Create input buffers
-    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, 4 * in_size)
-    dinput_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    input_buffer = create_buffer_32b(device, test_inputs, in_size)
+    dinput_buffer = create_batched_buffer_32b(device, batch_size, in_size)
     
     # Create parameter buffers
-    layer1_buffer = create_buffer_from_numpy_32b(device, layer1_params, 4)
-    layer2_buffer = create_buffer_from_numpy_32b(device, layer2_params, 4)
-    layer3_buffer = create_buffer_from_numpy_32b(device, layer3_params, 4)
-    layer4_buffer = create_buffer_from_numpy_32b(device, layer4_params, 4)
+    layer1_buffer = create_buffer_32b(device, layer1_params)
+    layer2_buffer = create_buffer_32b(device, layer2_params)
+    layer3_buffer = create_buffer_32b(device, layer3_params)
+    layer4_buffer = create_buffer_32b(device, layer4_params)
     
     # Create gradient buffers for parameters
-    dlayer1_buffer = create_result_buffer_32b(device, layer1_params.shape[0], layer1_params.shape[1])
-    dlayer2_buffer = create_result_buffer_32b(device, layer2_params.shape[0], layer2_params.shape[1])
-    dlayer3_buffer = create_result_buffer_32b(device, layer3_params.shape[0], layer3_params.shape[1])
-    dlayer4_buffer = create_result_buffer_32b(device, layer4_params.shape[0], layer4_params.shape[1])
+    dlayer1_buffer = create_batched_buffer_32b(device, layer1_params.shape[0], layer1_params.shape[1])
+    dlayer2_buffer = create_batched_buffer_32b(device, layer2_params.shape[0], layer2_params.shape[1])
+    dlayer3_buffer = create_batched_buffer_32b(device, layer3_params.shape[0], layer3_params.shape[1])
+    dlayer4_buffer = create_batched_buffer_32b(device, layer4_params.shape[0], layer4_params.shape[1])
     
     # Run kernel
     kernel.dispatch(
@@ -196,8 +196,8 @@ def test_network_without_encoding_address(device, make_kernel, random_seed, in_s
     specialization_module = create_specialization_module(device, in_size, hidden_size, out_size)
     kernel = make_kernel("network_without_encoding_address", link_modules=[specialization_module])
     
-    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, 4 * in_size)
-    output_buffer = create_result_buffer_32b(device, batch_size, out_size)
+    input_buffer = create_buffer_32b(device, test_inputs, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, out_size)
     
     # Calculate total parameter size and addresses
     layer1_size = layer1_params.size
@@ -225,7 +225,7 @@ def test_network_without_encoding_address(device, make_kernel, random_seed, in_s
     combined_params[layer3_address:layer3_address + layer3_size] = layer3_params.flatten()
     combined_params[layer4_address:layer4_address + layer4_size] = layer4_params.flatten()
     
-    parameters_buffer = create_buffer_from_numpy_32b(device, combined_params, 4)
+    parameters_buffer = create_buffer_32b(device, combined_params)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -270,8 +270,8 @@ def test_network_without_encoding_address_derivative(device, make_kernel, random
     kernel = make_kernel("network_without_encoding_address_derivative", link_modules=[specialization_module])
     
     # Create input buffers
-    input_buffer = create_buffer_from_numpy_32b(device, test_inputs, 4 * in_size)
-    dinput_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    input_buffer = create_buffer_32b(device, test_inputs, in_size)
+    dinput_buffer = create_batched_buffer_32b(device, batch_size, in_size)
     
     # Calculate total parameter size and addresses
     layer1_size = layer1_params.size
@@ -299,10 +299,10 @@ def test_network_without_encoding_address_derivative(device, make_kernel, random
     combined_params[layer3_address:layer3_address + layer3_size] = layer3_params.flatten()
     combined_params[layer4_address:layer4_address + layer4_size] = layer4_params.flatten()
     
-    parameters_buffer = create_buffer_from_numpy_32b(device, combined_params, 4)
+    parameters_buffer = create_buffer_32b(device, combined_params)
     
     # Create gradient buffer for combined parameters (same size as combined parameters)
-    dparameters_buffer = create_buffer_from_numpy_32b(device, np.zeros_like(combined_params), 4)
+    dparameters_buffer = create_buffer_32b(device, np.zeros_like(combined_params))
     
     # Run kernel
     kernel.dispatch(

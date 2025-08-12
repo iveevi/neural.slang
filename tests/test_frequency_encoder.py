@@ -36,8 +36,8 @@ def test_frequency_encoder(device, make_kernel, random_seed, in_size, levels):
     
     input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
     
-    input_buffer = create_buffer_from_numpy_32b(device, input_data, in_size * 4)
-    output_buffer = create_result_buffer_32b(device, batch_size, 2 * levels * in_size)
+    input_buffer = create_buffer_32b(device, input_data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, 2 * levels * in_size)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
@@ -66,8 +66,8 @@ def test_frequency_encoder_derivative(device, make_kernel, random_seed, in_size,
     
     input_data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
     
-    input_buffer = create_buffer_from_numpy_32b(device, input_data, in_size * 4)
-    dinput_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    input_buffer = create_buffer_32b(device, input_data, in_size)
+    dinput_buffer = create_batched_buffer_32b(device, batch_size, in_size)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),

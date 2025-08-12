@@ -25,13 +25,13 @@ def test_vector_arithmetic_basic(device, make_kernel, random_seed, in_size):
     input_b = np.random.rand(batch_size, in_size).astype(np.float32) + 0.1
     input_b[::2] = -input_b[::2]
     
-    input_a_buffer = create_buffer_from_numpy_32b(device, input_a, in_size * 4)
-    input_b_buffer = create_buffer_from_numpy_32b(device, input_b, in_size * 4)
+    input_a_buffer = create_buffer_32b(device, input_a, in_size)
+    input_b_buffer = create_buffer_32b(device, input_b, in_size)
     
-    output_add_buffer = create_result_buffer_32b(device, batch_size, in_size)
-    output_sub_buffer = create_result_buffer_32b(device, batch_size, in_size)
-    output_mul_buffer = create_result_buffer_32b(device, batch_size, in_size)
-    output_div_buffer = create_result_buffer_32b(device, batch_size, in_size)
+    output_add_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    output_sub_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    output_mul_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    output_div_buffer = create_batched_buffer_32b(device, batch_size, in_size)
     
     # Dispatch kernel
     kernel.dispatch(
@@ -81,13 +81,13 @@ def test_vector_arithmetic_derivatives(device, make_kernel, random_seed, in_size
     input_b = np.random.rand(batch_size, in_size).astype(np.float32) + 0.1
     input_b[::2] = -input_b[::2]
     
-    input_a_buffer = create_buffer_from_numpy_32b(device, input_a, in_size * 4)
-    input_b_buffer = create_buffer_from_numpy_32b(device, input_b, in_size * 4)
+    input_a_buffer = create_buffer_32b(device, input_a, in_size)
+    input_b_buffer = create_buffer_32b(device, input_b, in_size)
     
     output_buffers = {}
     for op in ['add', 'sub', 'mul', 'div']:
         for var in ['a', 'b']:
-            output_buffers[f'output_{op}_{var}'] = create_result_buffer_32b(device, batch_size, in_size)
+            output_buffers[f'output_{op}_{var}'] = create_batched_buffer_32b(device, batch_size, in_size)
     
     kernel.dispatch(
         thread_count=(batch_size, 1, 1),
