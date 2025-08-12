@@ -18,11 +18,6 @@ public struct StructuredBufferStorage<T> : IStorage<T>
     {
         this.buffer = buffer;
     }
-    
-    public uint getParameterCount()
-    {
-        return buffer.getCount();
-    }
 
     public T read(Address address)
     {
@@ -55,65 +50,38 @@ public struct StructuredBufferStorage<T> : IStorage<T>
 // Bindless buffer storage //
 /////////////////////////////
 
-struct BindlessBufferStorage<T> : IPointerLikeStorage<T>
+public struct BindlessBufferStorage<T> : IBindlessStorage<T>
     where T : IArithmeticAtomicable
 {
-    typealias Differential = This;
+    public typealias Differential = This;
 
-    struct BindlessAddress : IPointerLikeAddress<T>
+    public typealias BufferHandle = RWStructuredBuffer<T>;
+
+    public RWStructuredBuffer<T>.Handle descriptor;
+    public uint offset;
+
+    public T read()
     {
-        RWStructuredBuffer<T>.Handle descriptor;
-        uint offset;
-
-        T read()
-        {
-            return descriptor[offset];
-        }
-
-        void write(T value)
-        {
-            descriptor[offset] = value;
-        }
-
-        void add(T value)
-        {
-            InterlockedAdd(descriptor[offset], value);
-        }
+        return descriptor[offset];
     }
 
-    typealias Address = BindlessAddress;
-    typealias BufferType = int;
-
-    uint getParameterCount()
+    public void write(T value)
     {
-        static_assert(false, "bad!");
-        return 0;
+        descriptor[offset] = value;
     }
 
-    T read(Address address)
+    public void add(T value)
     {
-        static_assert(false, "bad!");
-        return address.read();
+        InterlockedAdd(descriptor[offset], value);
     }
 
-    void add(Address address, T value)
+    public This getOffset(int elements)
     {
-        static_assert(false, "bad!");
+        return This(descriptor, offset + elements);
     }
 
-    void write(Address address, T value)
+    public BufferHandle getBufferHandle()
     {
-        static_assert(false, "bad!");
-    }
-
-    BufferType getBufferFromAddress(Address address)
-    {
-        static_assert(false, "bad!");
-        return 0;
-    }
-
-    static Address getOffset(Address base, int elements)
-    {
-        return Address(base.descriptor, base.offset + elements);
+        return descriptor;
     }
 }

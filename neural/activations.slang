@@ -37,8 +37,8 @@ public struct ReLU<T> : IActivation<T>
         where Vector : IVector<T, N>
         where Vector.Differential  == Vector
     {
-        let d = dinput.p.step(T(0.0)).mul(doutput);
-        dinput = DifferentialPair<Vector>(dinput.p, d + __slang_noop_cast<Vector>(dinput.d));
+        let d = dinput.p.step(T(0.0)).mul(doutput).add(__slang_noop_cast<Vector>(dinput.d));
+        dinput = DifferentialPair<Vector>(dinput.p, d);
     }
 }
 
@@ -76,7 +76,7 @@ public struct LeakyReLU<T> : IActivation<T>
     {
         let positive = dinput.p.step(T(0.0));
         let negative = dinput.p.neg().step(T(0.0)).mul(Vector(alpha));
-        let d = positive.mul(doutput) + negative.mul(doutput);
+        let d = positive.mul(doutput).add(negative.mul(doutput));
         dinput = DifferentialPair<Vector>(dinput.p, d);
     }
 }

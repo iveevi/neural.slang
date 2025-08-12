@@ -1,33 +1,35 @@
 implementing neural;
 
-////////////////////
-// Inline vectors //
-////////////////////
+/////////////////////////
+// Cooperative vectors //
+/////////////////////////
 
-public struct InlineVector<T, int N> : IVector<T, N>
+public struct CoopVector<T, int N> : IVector<T, N>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     public static const int Dimension = N;
 
     public typealias Differential = This;
 
-    internal T[N] data;
+    internal CoopVec<T, N> data;
     
     public __init() {}
     
     public __init(int value) {
-        for (int i = 0; i < N; i++)
-            data[i] = T(value);
+        data.fill(T(value));
     }
     
     public __init(T value) {
-        for (int i = 0; i < N; i++)
-            data[i] = value;
+        data.fill(value);
     }
 
-    public __init(T[N] data) { this.data = data; }
+    public __init(CoopVec<T, N> data) {
+        this.data.copyFrom(data);
+    }
 
-    public __init(This other) { this.data = other.data; }
+    public __init(This other) {
+        this.data.copyFrom(other.data);
+    }
 
     public __subscript(int index) -> T
     {
@@ -66,15 +68,11 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return a.mul(b);
     }
 
-    // Necessary arithmetic operations
+    // Arithmetic operations
     [BackwardDerivative(addBwd)]
     public This add(This other)
     {
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            other.data[i] = this.data[i] + other.data[i];
-
-        return other;
+        return This(this.data + other.data);
     }
 
     static void addBwd(
@@ -90,11 +88,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
     [BackwardDerivative(subBwd)]
     public This sub(This other)
     {
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            other.data[i] = this.data[i] - other.data[i];
-
-        return other;
+        return This(this.data - other.data);
     }
     
     static void subBwd(
@@ -110,11 +104,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
     [BackwardDerivative(mulBwd)]
     public This mul(This other)
     {
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            other.data[i] = this.data[i] * other.data[i];
-
-        return other;
+        return This(this.data * other.data);
     }
 
     static void mulBwd(
@@ -130,11 +120,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
     [BackwardDerivative(divBwd)]
     public This div(This other)
     {
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            other.data[i] = this.data[i] / other.data[i];
-
-        return other;
+        return This(this.data / other.data);
     }
 
     static void divBwd(
@@ -153,64 +139,41 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
     public This neg()
     {
-        This result = this;
-
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            result.data[i] = -this.data[i];
-
-        return result;
+        return This(-this.data);
     }
     
     // Additional ML operations
     public This max(T other)
     {
-        This result = this;
-
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            result.data[i] = max(result.data[i], other);
-
-        return result;
+        return This(max(this.data, CoopVec<T, N>(other)));
     }
     
     public This max(This other)
     {
-        This result = this;
-
-        [ForceUnroll]
-        for (int i = 0; i < N; i++)
-            result.data[i] = max(result.data[i], other.data[i]);
-
-        return result;
+        return This(max(this.data, other.data));
     }
 
     public This step(T threshold)
     {
-        This result = this;
-
-        [ForceUnroll]
+        var result = CoopVec<T, N>();
         for (int i = 0; i < N; i++)
-            result.data[i] = (result.data[i] > threshold) ? T(1.0) : T(0.0);
-
-        return result;
+            result[i] = (data[i] > threshold) ? T(1.0) : T(0.0);
+        return This(result);
     }
 
     [BackwardDerivative(sumBwd)]
     public T sum()
     {
-        T sum = T(0.0);
-
-        [ForceUnroll]
+        var sum = T(0.0);
         for (int i = 0; i < N; i++)
             sum += this.data[i];
-
         return sum;
     }
 
     static void sumBwd(
         inout DifferentialPair<This> dthis,
-        T.Differential doutput)
+        T.Differential doutput
+    )
     {
         dthis = DifferentialPair<This>(
             dthis.p,
@@ -220,7 +183,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
 }
 
 // Ordinary storage
-public extension<T, int N> InlineVector<T, N> : IVector<T, N>
+public extension<T, int N> CoopVector<T, N> : IVector<T, N>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     [BackwardDerivative(applyBwd)]
@@ -232,29 +195,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        var output = OutputVector(T(0.0));
-
-        [ForceUnroll]
-        for (int i = 0; i < OutputSize; i++)
-        {
-            let biasOffset = Storage.getOffset(address, N * OutputSize + i);
-            output[i] = storage.read(biasOffset);
-        }
-
-        // TODO: transpose if N >> OutputSize or OutputSize < 4
-        [MaxIters(N)]
-        for (int j = 0; j < N; j++)
-        {
-            let x = data[j];
-            [ForceUnroll]
-            for (int i = 0; i < OutputSize; i++)
-            {
-                let elementOffset = Storage.getOffset(address, j * OutputSize + i);
-                output[i] += x * storage.read(elementOffset);
-            }
-        }
-
-        return output;
+        static_assert(false, "Not implemented");
     }
 
     static void applyBwd<int OutputSize, Storage, OutputVector>(
@@ -267,61 +208,48 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        let doutputVector = __slang_noop_cast<OutputVector>(doutput);
-
-        // Derivative of the input is transposed weight matrix times the output differential
-        var d = dthis.d;
-        [MaxIters(OutputSize)]
-        for (int j = 0; j < OutputSize; j++)
-        {
-            [ForceUnroll]
-            for (int i = 0; i < N; i++)
-            {
-                let elementOffset = Storage.getOffset(address, i * OutputSize + j);
-                d[i] += doutputVector[j] * dstorage.p.read(elementOffset);
-            }
-        }
-
-        // Derivative of the weights is the outer product of the input and the output differential
-        [MaxIters(N)]
-        for (int i = 0; i < N; i++)
-        {
-            let x = dthis.p[i];
-            [ForceUnroll]
-            for (int j = 0; j < OutputSize; j++)
-            {
-                let dy = __slang_noop_cast<OutputVector>(doutput)[j];
-                let elementOffset = Storage.getOffset(address, i * OutputSize + j);
-
-                __slang_noop_cast<Storage>(dstorage.d).add(elementOffset, x * dy);
-            }
-        }
-
-        // Derivative of the bias is the same as the output differential
-        [ForceUnroll]
-        for (int j = 0; j < OutputSize; j++)
-        {
-            let dout = __slang_noop_cast<OutputVector>(doutput)[j];
-            let biasOffset = Storage.getOffset(address, N * OutputSize + j);
-            __slang_noop_cast<Storage>(dstorage.d).add(biasOffset, dout);
-        }
-
-        dthis = DifferentialPair<This>(dthis.p, d);
+        static_assert(false, "Not implemented");
     }
 }
 
 // Bindless storage
-public extension<T, int N> InlineVector<T, N> : IVector<T, N>
+static CoopVecComponentType getCoopVecComponentType<T>()
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
+    if (T is half)
+        return CoopVecComponentType.Float16;
+    else if (T is float)
+        return CoopVecComponentType.Float32;
+    else
+        static_assert(false, "Unsupported type");
+
+    return CoopVecComponentType.Float32;
+}
+
+public extension<T, int N> CoopVector<T, N> : IVector<T, N>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+{
+    static const CoopVecComponentType ComponentType = getCoopVecComponentType<T>();
+
     [BackwardDerivative(applyBindlessBwd)]
     public OutputVector applyBindless<int OutputSize, Storage, OutputVector>(Storage weights, Storage biases)
         where Storage : IBindlessStorage<T>
-                                         where Storage.Differential == Storage
+        where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
-                                            where OutputVector.Differential == OutputVector
+        where OutputVector.Differential == OutputVector
     {
-        static_assert(false, "Not implemented");
+        let weightsStorage = __slang_noop_cast<RWStructuredBuffer<T>>(weights.getBufferHandle());
+        let biasesStorage = __slang_noop_cast<RWStructuredBuffer<T>>(biases.getBufferHandle());
+        let output = coopVecMatMulAdd<T, OutputSize>(
+            this.data, ComponentType,
+            weightsStorage, 0, ComponentType,
+            biasesStorage, 0, ComponentType,
+            CoopVecMatrixLayout.RowMajor,
+            false,
+            N * sizeof(T)
+        );
+
+        return __slang_noop_cast<OutputVector>(CoopVector<T, OutputSize>(output));
     }
 
     static void applyBindlessBwd<int OutputSize, Storage, OutputVector>(
@@ -334,6 +262,33 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        static_assert(false, "Not implemented");
+        let weightsGradStorage = __slang_noop_cast<RWStructuredBuffer<T>>(dweights.d.getBufferHandle());
+        let biasesGradStorage = __slang_noop_cast<RWStructuredBuffer<T>>(dbiases.d.getBufferHandle());
+        let weightsStorage = __slang_noop_cast<RWStructuredBuffer<T>>(dweights.p.getBufferHandle());
+        let outputGrad = __slang_noop_cast<CoopVector<T, OutputSize>>(doutput).data;
+
+        // Derivative of the weight matrix
+        coopVecOuterProductAccumulate(
+            outputGrad,
+            dthis.d.data,
+            weightsGradStorage, 0,
+            0,
+            CoopVecMatrixLayout.TrainingOptimal,
+            ComponentType
+        );
+        
+        // Derivative of the bias vector
+        coopVecReduceSumAccumulate(outputGrad, biasesGradStorage, 0);
+
+        // Derivative of the input vector
+        let d = coopVecMatMul<T, N>(
+            outputGrad, ComponentType,
+            weightsStorage, 0, ComponentType,
+            CoopVecMatrixLayout.ColumnMajor,
+            false,
+            N * sizeof(T)
+        );
+
+        dthis = DifferentialPair<This>(dthis.p, This(d));
     }
 }

@@ -175,7 +175,6 @@ public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : 
         }
     }
 
-    [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, Dim>
         where OutputVector : IVector<T, Features * Levels>
