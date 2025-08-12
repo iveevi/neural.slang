@@ -60,4 +60,4 @@ jobs:
     - name: Run tests
       run: |
         source .venv/bin/activate
-        pytest -v --tb=short -n auto
+        pytest -v --tb=short

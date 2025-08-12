@@ -274,11 +274,13 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         [MaxIters(OutputSize)]
         for (int j = 0; j < OutputSize; j++)
         {
+            let dy = doutputVector[j];
+
             [ForceUnroll]
             for (int i = 0; i < N; i++)
             {
                 let elementOffset = Storage.getOffset(address, i * OutputSize + j);
-                d[i] += doutputVector[j] * dstorage.p.read(elementOffset);
+                d[i] += dy * dstorage.p.read(elementOffset);
             }
         }
 
@@ -317,11 +319,27 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     [BackwardDerivative(applyBindlessBwd)]
     public OutputVector applyBindless<int OutputSize, Storage, OutputVector>(Storage weights, Storage biases)
         where Storage : IBindlessStorage<T>
-                                         where Storage.Differential == Storage
+        where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
-                                            where OutputVector.Differential == OutputVector
+        where OutputVector.Differential == OutputVector
     {
-        static_assert(false, "Not implemented");
+        var output = OutputVector(T(0.0));
+
+        [ForceUnroll]
+        for (int i = 0; i < OutputSize; i++)
+            output[i] = weights.getOffset(N * OutputSize + i).read();
+
+        // TODO: transpose if N >> OutputSize or OutputSize < 4
+        [MaxIters(N)]
+        for (int j = 0; j < N; j++)
+        {
+            let x = data[j];
+            [ForceUnroll]
+            for (int i = 0; i < OutputSize; i++)
+                output[i] += x * weights.getOffset(j * OutputSize + i).read();
+        }
+
+        return output;
     }
 
     static void applyBindlessBwd<int OutputSize, Storage, OutputVector>(
@@ -334,6 +352,43 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
-        static_assert(false, "Not implemented");
+        let doutputVector = __slang_noop_cast<OutputVector>(doutput);
+
+        // Derivative of the input is transposed weight matrix times the output differential
+        var d = dthis.d;
+        [MaxIters(OutputSize)]
+        for (int j = 0; j < OutputSize; j++)
+        {
+            let dy = doutputVector[j];
+        
+            [ForceUnroll]
+            for (int i = 0; i < N; i++)
+                d[i] += dy * dweights.p.getOffset(i * OutputSize + j).read();
+        }
+
+        // Derivative of the weights is the outer product of the input and the output differential
+        [MaxIters(N)]
+        for (int i = 0; i < N; i++)
+        {
+            let x = dthis.p[i];
+            [ForceUnroll]
+            for (int j = 0; j < OutputSize; j++)
+            {
+                let dy = __slang_noop_cast<OutputVector>(doutput)[j];
+                let offset = i * OutputSize + j;
+                __slang_noop_cast<Storage>(dweights.d).getOffset(offset).add(x * dy);
+            }
+        }
+
+        // Derivative of the bias is the same as the output differential
+        [ForceUnroll]
+        for (int j = 0; j < OutputSize; j++)
+        {
+            let dout = __slang_noop_cast<OutputVector>(doutput)[j];
+            let offset = N * OutputSize + j;
+            __slang_noop_cast<Storage>(dbiases.d).getOffset(offset).add(dout);
+        }
+
+        dthis = DifferentialPair<This>(dthis.p, d);
     }
 }

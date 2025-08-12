@@ -2,20 +2,12 @@ import pathlib
 import pytest
 import slangpy as spy
 import numpy as np
-
-
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+from common.util import *
 
 
 @pytest.fixture(scope="function")
 def device():
-    device = spy.create_device(
-        spy.DeviceType.vulkan,
-        enable_debug_layers=True,
-        include_paths=[
-            ROOT / "neural",
-        ],
-    )
+    device = create_device()
     try:
         yield device
     finally:

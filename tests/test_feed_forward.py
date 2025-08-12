@@ -3,6 +3,7 @@ import pytest
 import slangpy as spy
 import torch
 from .conftest import assert_close
+from common.util import *
 
 
 # TODO: also parameterize activation functions with link-time specialization
@@ -20,11 +21,7 @@ def create_linear_layer_data(input_size, output_size, random_seed):
     torch.manual_seed(random_seed)
     
     linear_layer = torch.nn.Linear(input_size, output_size)
-    
-    # Extract parameters in the format expected by the kernel
-    weights_data = linear_layer.weight.detach().numpy().T  # Transpose back for kernel
-    bias_data = linear_layer.bias.detach().numpy().reshape(1, -1)
-    parameters_data = np.ascontiguousarray(np.concatenate((weights_data, bias_data), axis=0).astype(np.float32))
+    parameters_data = linear_to_numpy(linear_layer)
     
     return linear_layer, parameters_data
 
@@ -177,12 +174,8 @@ def test_feed_forward_derivative(device, make_kernel, random_seed, in_size, out_
     assert linear_layer.bias.grad is not None, "Bias gradients were not computed"
     
     expected_input_derivatives = input_torch.grad.detach().numpy()
-    # Convert back to our parameter layout (weights transposed back, bias reshaped)
-    expected_weights_derivatives = linear_layer.weight.grad.detach().numpy().T
-    expected_bias_derivatives = linear_layer.bias.grad.detach().numpy().reshape(1, -1)
-    
-    # Combine expected parameter derivatives to match the combined parameters_data layout
-    expected_parameter_derivatives = np.concatenate((expected_weights_derivatives, expected_bias_derivatives), axis=0)
+    # Convert gradients using utility function
+    expected_parameter_derivatives = linear_gradients_to_numpy(linear_layer)
     
     # Compare results
     assert_close(input_derivatives, expected_input_derivatives, rtol=1e-5, atol=1e-6)
@@ -361,12 +354,8 @@ def test_feed_forward_address_derivative(device, make_kernel, random_seed, in_si
     assert linear_layer.bias.grad is not None, "Bias gradients were not computed"
     
     expected_input_derivatives = input_torch.grad.detach().numpy()
-    # Convert back to our parameter layout (weights transposed back, bias reshaped)
-    expected_weights_derivatives = linear_layer.weight.grad.detach().numpy().T
-    expected_bias_derivatives = linear_layer.bias.grad.detach().numpy().reshape(1, -1)
-    
-    # Combine expected parameter derivatives to match the combined parameters_data layout
-    expected_parameter_derivatives = np.concatenate((expected_weights_derivatives, expected_bias_derivatives), axis=0)
+    # Convert gradients using utility function
+    expected_parameter_derivatives = linear_gradients_to_numpy(linear_layer)
     
     # Compare results
     assert_close(input_derivatives, expected_input_derivatives, rtol=1e-5, atol=1e-6)

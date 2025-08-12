@@ -2,10 +2,7 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
-from .util import create_buffer, linear_to_numpy
-
-
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+from common.util import *
 
 
 # TODO: base class for all networks
@@ -33,31 +30,21 @@ class Network:
 
         layers = np.ascontiguousarray(np.concatenate(layers, axis=0))
 
-        self.parameters = create_buffer(device, layers)
-        self.gradients = create_buffer(device, np.zeros_like(layers))
-        self.optimizer_states = create_buffer(device, np.zeros_like(layers).repeat(3, axis=0), 3 * 4)
-        self.layer_addresses = create_buffer(device, self.layer_addresses_host)
+        self.parameters = create_float_buffer(device, layers)
+        self.gradients = create_float_buffer(device, np.zeros_like(layers))
+        self.optimizer_states = create_float_tensor_buffer(device, np.zeros_like(layers).repeat(3, axis=0), 3)
+        self.layer_addresses = create_float_buffer(device, self.layer_addresses_host)
         self.parameter_count = layers.size
 
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
         assert input.ndim > 1
         assert input.shape[-1] == self.input
-        return self.device.create_buffer(
-            size=input.nbytes,
-            struct_size=self.input * 4,
-            usage=spy.BufferUsage.shader_resource,
-            data=input,
-        )
+        return create_float_tensor_buffer(self.device, input, self.input)
 
     def output_vec(self, output: np.ndarray) -> spy.Buffer:
         assert output.ndim > 1
         assert output.shape[-1] == self.output
-        return self.device.create_buffer(
-            size=output.nbytes,
-            struct_size=self.output * 4,
-            usage=spy.BufferUsage.shader_resource,
-            data=output,
-        )
+        return create_float_tensor_buffer(self.device, output, self.output)
 
     def copy_weights(self, layer_index: int, layer: nn.Linear):
         begin = self.layer_addresses_host[layer_index]
@@ -67,7 +54,7 @@ class Network:
             end = self.layer_addresses_host[layer_index + 1]
         base = self.parameters.to_numpy().view(np.float32)
         base[begin:end] = linear_to_numpy(layer).flatten()
-        self.parameters = create_buffer(self.device, base)
+        self.parameters = create_float_buffer(self.device, base)
 
     def layer_to_numpy(self, layer_index: int) -> np.ndarray:
         shape = self.layer_shapes[layer_index]

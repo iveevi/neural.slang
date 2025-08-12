@@ -7,10 +7,11 @@ import pathlib
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
+from common.util import *
 from ..network_with_addresses import Network, TrainingPipeline
 
 
-ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
+
 
 
 def generate_random_signal(length: int) -> np.ndarray:
@@ -24,13 +25,7 @@ def main():
     time = np.linspace(0, 1, length)
     signal = generate_random_signal(length)
 
-    device = spy.create_device(
-        spy.DeviceType.vulkan,
-        enable_debug_layers=True,
-        include_paths=[
-            ROOT / "neural",
-        ],
-    )
+    device = create_device()
 
     network = Network(
         device,

@@ -13,11 +13,13 @@ from collections import defaultdict
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from .network_with_separate_buffers import Network, TrainingPipeline
+from .network_with_separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
+from .network_with_addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
 from .pytorch_networks import PyTorchNetwork
+from common.util import *
 
 
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+
 
 
 class ProfilerState:
@@ -262,17 +264,9 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
     levels = 8
 
     # Prepare SlangPy
-    slangpy_device = spy.create_device(
-        spy.DeviceType.vulkan,
-        enable_debug_layers=False,
-        include_paths=[
-            ROOT / "neural",
-        ],
-    )
+    slangpy_device = create_device()
 
-    from .network_with_addresses import Network, TrainingPipeline
-
-    slangpy_network = Network(
+    slangpy_network = AddressesNetwork(
         slangpy_device,
         hidden=hidden_size,
         hidden_layers=hidden_layers,
@@ -280,7 +274,7 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
         input=1,
         output=1,
     )
-    slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
+    slangpy_pipeline = AddressesTrainingPipeline(slangpy_device, slangpy_network)
     slangpy_input = slangpy_network.input_vec(time_data)
     slangpy_signal = slangpy_network.output_vec(signal)
     slangpy_output = slangpy_network.output_vec(np.zeros_like(signal))

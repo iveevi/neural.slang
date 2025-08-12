@@ -10,11 +10,13 @@ import argparse
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from ..util import linear_to_numpy, linear_gradients_to_numpy
+from common.util import *
 from ..pytorch_networks import PyTorchNetwork
+from ..network_with_addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
+from ..network_with_separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
 
 
-ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
+
 
 
 def generate_random_signal(length: int) -> np.ndarray:
@@ -45,25 +47,17 @@ def main(address_mode: bool = True):
     torch_signal = torch.from_numpy(signal).to(torch_device)
 
     # Prepare SlangPy
-    slangpy_device = spy.create_device(
-        spy.DeviceType.vulkan,
-        enable_debug_layers=True,
-        include_paths=[
-            ROOT / "neural",
-        ],
-    )
+    slangpy_device = create_device()
 
     if address_mode:
-        from ..network_with_addresses import Network, TrainingPipeline
-        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
-        slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
+        slangpy_network = AddressesNetwork(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
+        slangpy_pipeline = AddressesTrainingPipeline(slangpy_device, slangpy_network)
 
         for i, layer in enumerate(torch_network.layers):
             slangpy_network.copy_weights(i, layer)
     else:
-        from ..network_with_separate_buffers import Network, TrainingPipeline
-        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
-        slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
+        slangpy_network = SeparateBuffersNetwork(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
+        slangpy_pipeline = SeparateBuffersTrainingPipeline(slangpy_device, slangpy_network)
         
         for i, layer in enumerate(torch_network.layers):
             slangpy_network.layers[i].copy_weights(layer)

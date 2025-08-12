@@ -7,11 +7,11 @@ import pathlib
 from PIL import Image
 from tqdm import tqdm
 
-from ..util import create_buffer
+from common.util import *
 from ..network_with_addresses import Network, TrainingPipeline
 
 
-ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
+
 
 
 def main():
@@ -27,13 +27,7 @@ def main():
     uv = uv.astype(np.float32)
     print(uv.shape)
 
-    device = spy.create_device(
-        spy.DeviceType.vulkan,
-        enable_debug_layers=True,
-        include_paths=[
-            ROOT / "neural",
-        ],
-    )
+    device = create_device()
 
     network = Network(device,
         hidden=64,

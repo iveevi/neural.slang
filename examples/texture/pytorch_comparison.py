@@ -9,11 +9,13 @@ import torch.nn.functional as F
 from PIL import Image
 from tqdm import tqdm
 
-from ..util import linear_to_numpy, linear_gradients_to_numpy
+from common.util import *
 from ..pytorch_networks import PyTorchNetwork
+from ..network_with_addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
+from ..network_with_separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
 
 
-ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
+
 
 
 def load_texture_data():
@@ -44,22 +46,14 @@ def main(address_mode: bool = True):
     hidden_layers = 2
 
     # Prepare SlangPy
-    slangpy_device = spy.create_device(
-        spy.DeviceType.vulkan,
-        enable_debug_layers=True,
-        include_paths=[
-            ROOT / "neural",
-        ],
-    )
+    slangpy_device = create_device()
 
     if address_mode:
-        from ..network_with_addresses import Network, TrainingPipeline
-        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=2, output=3)
+        slangpy_network = AddressesNetwork(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=2, output=3)
+        slangpy_pipeline = AddressesTrainingPipeline(slangpy_device, slangpy_network)
     else:
-        from ..network_with_separate_buffers import Network, TrainingPipeline
-        slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=2, output=3)
-
-    slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
+        slangpy_network = SeparateBuffersNetwork(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=2, output=3)
+        slangpy_pipeline = SeparateBuffersTrainingPipeline(slangpy_device, slangpy_network)
     slangpy_input = slangpy_network.input_vec(uv)
     slangpy_target = slangpy_network.output_vec(image_flat)
     slangpy_output = slangpy_network.output_vec(np.zeros_like(image_flat))

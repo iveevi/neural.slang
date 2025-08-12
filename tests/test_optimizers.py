@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 from .conftest import assert_close
-from .test_utils import create_buffer_for_data
+from common.util import *
 
 
 @pytest.mark.parametrize("seed", [0])

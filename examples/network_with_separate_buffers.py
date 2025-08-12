@@ -2,10 +2,7 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
-from .util import create_buffer, linear_to_numpy
-
-
-ROOT = pathlib.Path(__file__).parent.parent.absolute()
+from common.util import *
 
 
 class Layer:
@@ -18,15 +15,15 @@ class Layer:
         np_adam_states = np.zeros(np_params.size * 3, dtype=np.float32)
         # np_sgd_states = np.zeros(np_params.size, dtype=np.float32)
 
-        self.parameters = create_buffer(device, np_params)
-        self.gradients = create_buffer(device, np.zeros_like(np_params))
-        self.optimizer_states = create_buffer(device, np_adam_states, 3 * 4)
-        # self.optimizer_states = create_buffer(device, np_sgd_states, 4)
+        self.parameters = create_float_buffer(device, np_params)
+        self.gradients = create_float_buffer(device, np.zeros_like(np_params))
+        self.optimizer_states = create_float_tensor_buffer(device, np_adam_states, 3)
+        # self.optimizer_states = create_float_buffer(device, np_sgd_states)
 
         self.copy_weights(nn.Linear(in_size, out_size))
 
     def copy_weights(self, linear: nn.Linear):
-        self.parameters = create_buffer(self.device, linear_to_numpy(linear))
+        self.parameters = create_float_buffer(self.device, linear_to_numpy(linear))
 
     def parameters_to_numpy(self) -> np.ndarray:
         return self.parameters.to_numpy().view(np.float32).reshape(self.in_size + 1, self.out_size)
@@ -85,22 +82,12 @@ class Network:
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
         assert input.ndim > 1
         assert input.shape[-1] == self.input
-        return self.device.create_buffer(
-            size=input.nbytes,
-            struct_size=self.input * 4,
-            usage=spy.BufferUsage.shader_resource,
-            data=input,
-        )
+        return create_float_tensor_buffer(self.device, input, self.input)
 
     def output_vec(self, output: np.ndarray) -> spy.Buffer:
         assert output.ndim > 1
         assert output.shape[-1] == self.output
-        return self.device.create_buffer(
-            size=output.nbytes,
-            struct_size=self.output * 4,
-            usage=spy.BufferUsage.shader_resource,
-            data=output,
-        )
+        return create_float_tensor_buffer(self.device, output, self.output)
 
     def layer_to_numpy(self, layer_index: int) -> np.ndarray:
         return self.layers[layer_index].parameters_to_numpy()

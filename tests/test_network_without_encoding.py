@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 from .conftest import assert_close
-from .test_utils import create_buffer_for_data, create_output_buffer
+from common.util import *
 
 
 def create_specialization_module(device, in_size, hidden_size, out_size):
@@ -29,22 +29,11 @@ def create_network_layers(random_seed, in_size, hidden_size, out_size):
         torch.nn.ReLU()
     )
     
-    # Extract parameters in the format expected by the kernel
-    layer1_weights = network[0].weight.detach().numpy().T  # Transpose back for kernel
-    layer1_bias = network[0].bias.detach().numpy().reshape(1, -1)
-    layer1_params = np.ascontiguousarray(np.concatenate((layer1_weights, layer1_bias), axis=0).astype(np.float32))
-    
-    layer2_weights = network[2].weight.detach().numpy().T
-    layer2_bias = network[2].bias.detach().numpy().reshape(1, -1)
-    layer2_params = np.ascontiguousarray(np.concatenate((layer2_weights, layer2_bias), axis=0).astype(np.float32))
-    
-    layer3_weights = network[4].weight.detach().numpy().T
-    layer3_bias = network[4].bias.detach().numpy().reshape(1, -1)
-    layer3_params = np.ascontiguousarray(np.concatenate((layer3_weights, layer3_bias), axis=0).astype(np.float32))
-    
-    layer4_weights = network[6].weight.detach().numpy().T
-    layer4_bias = network[6].bias.detach().numpy().reshape(1, -1)
-    layer4_params = np.ascontiguousarray(np.concatenate((layer4_weights, layer4_bias), axis=0).astype(np.float32))
+    # Extract parameters using utility functions
+    layer1_params = linear_to_numpy(network[0])
+    layer2_params = linear_to_numpy(network[2])
+    layer3_params = linear_to_numpy(network[4])
+    layer4_params = linear_to_numpy(network[6])
     
     return network, layer1_params, layer2_params, layer3_params, layer4_params
 
@@ -170,21 +159,14 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed, i
     # Get expected gradients
     expected_input_grad = input_torch.grad.detach().numpy()
     
-    # Extract parameter gradients and convert back to our parameter layout
-    expected_w1_grad = network[0].weight.grad.detach().numpy().T
-    expected_b1_grad = network[0].bias.grad.detach().numpy().reshape(1, -1)
-    expected_w2_grad = network[2].weight.grad.detach().numpy().T
-    expected_b2_grad = network[2].bias.grad.detach().numpy().reshape(1, -1)
-    expected_w3_grad = network[4].weight.grad.detach().numpy().T
-    expected_b3_grad = network[4].bias.grad.detach().numpy().reshape(1, -1)
-    expected_w4_grad = network[6].weight.grad.detach().numpy().T
-    expected_b4_grad = network[6].bias.grad.detach().numpy().reshape(1, -1)
+    # Extract parameter gradients using utility functions
+    expected_layer1_grad = linear_gradients_to_numpy(network[0])
+    expected_layer2_grad = linear_gradients_to_numpy(network[2])
+    expected_layer3_grad = linear_gradients_to_numpy(network[4])
+    expected_layer4_grad = linear_gradients_to_numpy(network[6])
     
     # Combine expected parameter gradients to match layout
-    expected_layer1_grad = np.concatenate((expected_w1_grad, expected_b1_grad), axis=0)
-    expected_layer2_grad = np.concatenate((expected_w2_grad, expected_b2_grad), axis=0)
-    expected_layer3_grad = np.concatenate((expected_w3_grad, expected_b3_grad), axis=0)
-    expected_layer4_grad = np.concatenate((expected_w4_grad, expected_b4_grad), axis=0)
+
     
     # Test input gradients
     assert_close(input_derivatives, expected_input_grad)
@@ -365,21 +347,14 @@ def test_network_without_encoding_address_derivative(device, make_kernel, random
     # Get expected gradients
     expected_input_grad = input_torch.grad.detach().numpy()
     
-    # Extract parameter gradients and convert back to our parameter layout
-    expected_w1_grad = network[0].weight.grad.detach().numpy().T
-    expected_b1_grad = network[0].bias.grad.detach().numpy().reshape(1, -1)
-    expected_w2_grad = network[2].weight.grad.detach().numpy().T
-    expected_b2_grad = network[2].bias.grad.detach().numpy().reshape(1, -1)
-    expected_w3_grad = network[4].weight.grad.detach().numpy().T
-    expected_b3_grad = network[4].bias.grad.detach().numpy().reshape(1, -1)
-    expected_w4_grad = network[6].weight.grad.detach().numpy().T
-    expected_b4_grad = network[6].bias.grad.detach().numpy().reshape(1, -1)
+    # Extract parameter gradients using utility functions
+    expected_layer1_grad = linear_gradients_to_numpy(network[0])
+    expected_layer2_grad = linear_gradients_to_numpy(network[2])
+    expected_layer3_grad = linear_gradients_to_numpy(network[4])
+    expected_layer4_grad = linear_gradients_to_numpy(network[6])
     
     # Combine expected parameter gradients to match layout
-    expected_layer1_grad = np.concatenate((expected_w1_grad, expected_b1_grad), axis=0)
-    expected_layer2_grad = np.concatenate((expected_w2_grad, expected_b2_grad), axis=0)
-    expected_layer3_grad = np.concatenate((expected_w3_grad, expected_b3_grad), axis=0)
-    expected_layer4_grad = np.concatenate((expected_w4_grad, expected_b4_grad), axis=0)
+
     
     # Test input gradients
     assert_close(input_derivatives, expected_input_grad)
