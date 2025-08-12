@@ -95,12 +95,13 @@ public struct NetworkWithAddresses<
         );
     }
 
-    public void optimize(uint tid, uint dispatchSize)
+    public void optimize(uint tid)
     {
-        let optimizer = Adam<float>();
-        for (uint i = tid; i < parameterCount; i += dispatchSize) {
-            optimizer.step(states[i], parameters[i], gradients[i]);
-            gradients[i] = 0.0;
+        if (tid < parameterCount)
+        {
+            let optimizer = Adam<float>();
+            optimizer.step(states[tid], parameters[tid], gradients[tid]);
+            gradients[tid] = 0.0;
         }
     }
 };

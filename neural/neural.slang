@@ -2,7 +2,7 @@ module neural;
 
 __include interfaces;
 __include storages;
-__include vectors;
+__include inline_vector;
 __include activations;
 __include losses;
 __include optimizers;

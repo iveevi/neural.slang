@@ -14,10 +14,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
 
     internal T[N] data;
     
-    public __init() {
-        for (int i = 0; i < N; i++)
-            data[i] = T(0.0);
-    }
+    public __init() {}
     
     public __init(int value) {
         for (int i = 0; i < N; i++)
@@ -292,6 +289,8 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector
     {
+        let doutputVector = __slang_noop_cast<OutputVector>(doutput);
+
         // Derivative of the input is transposed weight matrix times the output differential
         var d = dthis.d;
         [MaxIters(OutputSize)]
@@ -301,21 +300,89 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
             for (int i = 0; i < N; i++)
             {
                 let elementOffset = Storage.getOffset(address, i * OutputSize + j);
-                d[i] += __slang_noop_cast<OutputVector>(doutput)[j] * dstorage.p.read(elementOffset);
+                d[i] += doutputVector[j] * dstorage.p.read(elementOffset);
             }
         }
 
         // Derivative of the weights is the outer product of the input and the output differential
+        static const int B4BLOCKS = 1;
+
         [MaxIters(N)]
         for (int i = 0; i < N; i++)
         {
-            [ForceUnroll]
-            for (int j = 0; j < OutputSize; j++)
+            let x = dthis.p[i];
+            // if (false && OutputSize % (B4BLOCKS * 4) == 0)
+            // {
+            //     // TODO: try shuffling loop order to avoid bank conflicts
+            //     Array<vector<T, 4>, B4BLOCKS> dy4;
+            //     for (int j = 0; j < OutputSize; j += B4BLOCKS * 4)
+            //     {
+            //         [ForceUnroll]
+            //         for (int k = 0; k < B4BLOCKS; k++)
+            //         {
+            //             dy4[k] = vector<T, 4>(
+            //                 doutputVector[j + k * 4],
+            //                 doutputVector[j + k * 4 + 1],
+            //                 doutputVector[j + k * 4 + 2],
+            //                 doutputVector[j + k * 4 + 3]
+            //             );
+            //         }
+
+            //         [ForceUnroll]
+            //         for (int k = 0; k < B4BLOCKS; k++)
+            //         {
+            //             dy4[k] = WaveActiveSum(x * dy4[k]);
+            //         }
+
+            //         if (WaveIsFirstLane())
+            //         {
+            //             [ForceUnroll]
+            //             for (int k = 0; k < B4BLOCKS; k++)
+            //             {
+            //                 let elementOffset1 = Storage.getOffset(address, i * OutputSize + j + k * 4);
+            //                 let elementOffset2 = Storage.getOffset(address, i * OutputSize + j + k * 4 + 1);
+            //                 let elementOffset3 = Storage.getOffset(address, i * OutputSize + j + k * 4 + 2);
+            //                 let elementOffset4 = Storage.getOffset(address, i * OutputSize + j + k * 4 + 3);
+            //                 __slang_noop_cast<Storage>(dstorage.d).add(elementOffset1, dy4[k][0]);
+            //                 __slang_noop_cast<Storage>(dstorage.d).add(elementOffset2, dy4[k][1]);
+            //                 __slang_noop_cast<Storage>(dstorage.d).add(elementOffset3, dy4[k][2]);
+            //                 __slang_noop_cast<Storage>(dstorage.d).add(elementOffset4, dy4[k][3]);
+            //             }
+            //         }
+            //     }
+            // }
+            // else
+            // if (OutputSize < 4)
+            // {
+            //     vector<T, OutputSize> dy;
+            //     [ForceUnroll]
+            //     for (int j = 0; j < OutputSize; j++)
+            //         dy[j] = __slang_noop_cast<OutputVector>(doutput)[j];
+
+            //     let sum = WaveActiveSum(x * dy);
+            //     if (WaveIsFirstLane())
+            //     {
+            //         [ForceUnroll]
+            //         for (int j = 0; j < OutputSize; j++)
+            //         {
+            //             let elementOffset = Storage.getOffset(address, i * OutputSize + j);
+            //             __slang_noop_cast<Storage>(dstorage.d).add(elementOffset, sum[j]);
+            //         }
+            //     }
+            // }
+            // else
             {
-                let x = dthis.p[i];
-                let dy = __slang_noop_cast<OutputVector>(doutput)[j];
-                let elementOffset = Storage.getOffset(address, i * OutputSize + j);
-                __slang_noop_cast<Storage>(dstorage.d).add(elementOffset, x * dy);
+                [ForceUnroll]
+                for (int j = 0; j < OutputSize; j++)
+                {
+                    let dy = __slang_noop_cast<OutputVector>(doutput)[j];
+                    let elementOffset = Storage.getOffset(address, i * OutputSize + j);
+
+                    __slang_noop_cast<Storage>(dstorage.d).add(elementOffset, x * dy);
+                    // let sum = WaveActiveSum(x * dy);
+                    // if (WaveIsFirstLane())
+                    //     __slang_noop_cast<Storage>(dstorage.d).add(elementOffset, sum);
+                }
             }
         }
 
@@ -325,7 +392,10 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         {
             let dout = __slang_noop_cast<OutputVector>(doutput)[j];
             let biasOffset = Storage.getOffset(address, N * OutputSize + j);
-            __slang_noop_cast<Storage>(dstorage.d).add(biasOffset, dout);
+
+            let sum = WaveActiveSum(dout);
+            if (WaveIsFirstLane())
+                __slang_noop_cast<Storage>(dstorage.d).add(biasOffset, sum);
         }
 
         dthis = DifferentialPair<This>(dthis.p, d);

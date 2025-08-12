@@ -53,13 +53,13 @@ def main(address_mode: bool = True):
     )
 
     if address_mode:
-        from ..network_with_addresses import Network, Pipeline
+        from ..network_with_addresses import Network, TrainingPipeline
         slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=2, output=3)
     else:
-        from ..network_with_separate_buffers import Network, Pipeline
+        from ..network_with_separate_buffers import Network, TrainingPipeline
         slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=2, output=3)
 
-    slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+    slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
     slangpy_input = slangpy_network.input_vec(uv)
     slangpy_target = slangpy_network.output_vec(image_flat)
     slangpy_output = slangpy_network.output_vec(np.zeros_like(image_flat))

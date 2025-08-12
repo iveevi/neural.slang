@@ -54,16 +54,16 @@ def main(address_mode: bool = True):
     )
 
     if address_mode:
-        from ..network_with_addresses import Network, Pipeline
+        from ..network_with_addresses import Network, TrainingPipeline
         slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
-        slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+        slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
 
         for i, layer in enumerate(torch_network.layers):
             slangpy_network.copy_weights(i, layer)
     else:
-        from ..network_with_separate_buffers import Network, Pipeline
+        from ..network_with_separate_buffers import Network, TrainingPipeline
         slangpy_network = Network(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
-        slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+        slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
         
         for i, layer in enumerate(torch_network.layers):
             slangpy_network.layers[i].copy_weights(layer)

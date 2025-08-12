@@ -98,7 +98,7 @@ class Network:
             "parameterCount": self.parameter_count,
         }
 
-class Pipeline:
+class TrainingPipeline:
     @staticmethod
     def compile_specialization_module(
         device: spy.Device,
@@ -193,19 +193,12 @@ class Pipeline:
         self.device.submit_command_buffer(command_encoder.finish())
 
     def optimize(self, network: Network):
-        BLOCK_SIZE = 64
-
-        count = network.parameter_count
-        groups = (count + BLOCK_SIZE - 1) // BLOCK_SIZE
-
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.optimize_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.network = network.dict()
-            
-            cursor.dispatchSize = groups * BLOCK_SIZE
-            cmd.dispatch(thread_count=[BLOCK_SIZE, groups, 1])
+            cmd.dispatch(thread_count=[network.parameter_count, 1, 1])
 
         self.device.submit_command_buffer(command_encoder.finish())

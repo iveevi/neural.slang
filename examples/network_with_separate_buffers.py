@@ -109,7 +109,7 @@ class Network:
         return self.layers[layer_index].gradients_to_numpy()
 
 
-class Pipeline:
+class TrainingPipeline:
     @staticmethod
     def compile_specialization_module(
         device: spy.Device,

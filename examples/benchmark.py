@@ -13,7 +13,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from .network_with_separate_buffers import Network, Pipeline
+from .network_with_separate_buffers import Network, TrainingPipeline
 from .pytorch_networks import PyTorchNetwork
 
 
@@ -217,7 +217,7 @@ def plot_profiling_results():
     print("\n" + "="*80)
     print("PERFORMANCE SUMMARY")
     print("="*80)
-    print(f"Total iterations analyzed: {len(profiler.timing_data['pytorch_forward'])}/999 per framework")
+    
     for i, phase in enumerate(phases):
         pytorch_median = pytorch_medians[i]
         slangpy_median = slangpy_medians[i]
@@ -270,7 +270,7 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
         ],
     )
 
-    from .network_with_addresses import Network, Pipeline
+    from .network_with_addresses import Network, TrainingPipeline
 
     slangpy_network = Network(
         slangpy_device,
@@ -280,7 +280,7 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
         input=1,
         output=1,
     )
-    slangpy_pipeline = Pipeline(slangpy_device, slangpy_network)
+    slangpy_pipeline = TrainingPipeline(slangpy_device, slangpy_network)
     slangpy_input = slangpy_network.input_vec(time_data)
     slangpy_signal = slangpy_network.output_vec(signal)
     slangpy_output = slangpy_network.output_vec(np.zeros_like(signal))
@@ -360,6 +360,9 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
         slangpy_backward()
         slangpy_optimize()
         
+    for i in tqdm(range(iterations), desc="Training"):
+        set_iteration_count(i)
+
         # PyTorch training
         pytorch_loss = pytorch_forward()
         pytorch_backward(pytorch_loss)
@@ -374,7 +377,10 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
         
         # SlangPy inference
         slangpy_inference()
-        
+    
+    for i in tqdm(range(iterations), desc="Inference"):
+        set_iteration_count(i)
+
         # PyTorch inference
         pytorch_inference()
 
@@ -382,7 +388,7 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
 def main():
     # Reset profiler and run benchmark
     reset_profiler()
-    run_benchmark(iterations=1000, hidden_size=64, hidden_layers=2, levels=8)
+    run_benchmark(iterations=10000, hidden_size=64, hidden_layers=2, levels=8)
     
     # Generate plots
     print("\n" + "="*80)

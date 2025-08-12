@@ -7,7 +7,7 @@ import pathlib
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
 
-from ..network_with_addresses import Network, Pipeline
+from ..network_with_addresses import Network, TrainingPipeline
 
 
 ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
@@ -41,7 +41,7 @@ def main():
         output=1,
     )
 
-    pipeline = Pipeline(device, network)
+    pipeline = TrainingPipeline(device, network)
 
     input = np.array(time, dtype=np.float32).reshape(-1, 1)
     signal = np.array(signal, dtype=np.float32).reshape(-1, 1)

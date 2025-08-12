@@ -66,11 +66,9 @@ void backward(uint3 thread_id : SV_DispatchThreadID)
 }
 
 // Neural network optimization
-uniform uint dispatchSize;
-
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void optimize(uint3 thread_id : SV_DispatchThreadID)
 {
-    network.optimize(thread_id.x, dispatchSize);
+    network.optimize(thread_id.x);
 }

@@ -8,7 +8,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from ..util import create_buffer
-from ..network_with_separate_buffers import Network, Pipeline
+from ..network_with_separate_buffers import Network, TrainingPipeline
 
 
 ROOT = pathlib.Path(__file__).parent.parent.parent.absolute()
@@ -43,7 +43,7 @@ def main():
         output=3,
     )
 
-    pipeline = Pipeline(device, network)
+    pipeline = TrainingPipeline(device, network)
 
     input_buffer = network.input_vec(uv)
     texture_buffer = network.output_vec(image.reshape(-1, 3))
