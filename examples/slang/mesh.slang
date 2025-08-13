@@ -3,7 +3,7 @@ module mesh;
 public struct TriangleMesh
 {
     // TODO: make this bindless
-    public RWStructuredBuffer<float[3]> vertices;
-    public RWStructuredBuffer<uint[3]> triangles;
+    public RWStructuredBuffer<float3, ScalarDataLayout> vertices;
+    public RWStructuredBuffer<uint3, ScalarDataLayout> triangles;
     public uint triangleCount;
 };

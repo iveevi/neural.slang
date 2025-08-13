@@ -3,12 +3,12 @@ module network_with_addresses;
 import neural;
 
 // Neural network structure
+// TODO: INetwork interface with forward, backward, and optimize methods
 public struct NetworkWithAddresses<
     int In,
     int Out,
     int EncodedOut,
     int Hidden,
-    int Levels,
     int HiddenLayers,
     Encoder,
     Activation

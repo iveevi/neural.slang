@@ -196,6 +196,7 @@ public extension<T, int N> CoopVector<T, N> : IVector<T, N>
         where OutputVector.Differential == OutputVector
     {
         static_assert(false, "Not implemented");
+        return OutputVector(T(0.0));
     }
 
     static void applyBwd<int OutputSize, Storage, OutputVector>(

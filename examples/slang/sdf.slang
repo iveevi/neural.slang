@@ -64,13 +64,8 @@ public extension TriangleMesh : ISignedDistanceField
 
         for (int i = 0; i < triangleCount; i++)
         {
-            uint[3] idx = triangles[i];
-            let v0 = float3(vertices[idx[0]][0], vertices[idx[0]][1], vertices[idx[0]][2]);
-            let v1 = float3(vertices[idx[1]][0], vertices[idx[1]][1], vertices[idx[1]][2]);
-            let v2 = float3(vertices[idx[2]][0], vertices[idx[2]][1], vertices[idx[2]][2]);
-            let tri = Triangle(v0, v1, v2);
-            // uint3 idx = triangles[i];
-            // let tri = Triangle(vertices[idx.x], vertices[idx.y], vertices[idx.z]);
+            let idx = triangles[i];
+            let tri = Triangle(vertices[idx.x], vertices[idx.y], vertices[idx.z]);
             float d = tri.sdf(p);
             if (d < min_d)
                 min_d = d;
@@ -80,14 +75,22 @@ public extension TriangleMesh : ISignedDistanceField
     }
 }
 
-// Intersection routines
+// Intersections with ray marching
+public interface IRayMarchIntersection
+{
+    public static This rayMarch<Object>(Object object, Ray ray, int maxIters, float stepSize, float tMin, float tMax)
+        where Object : ISignedDistanceField;
+}
+
+// Intersections with sphere tracing
 public interface ISphereTraceIntersection
 {
     public static This sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
         where Object : ISignedDistanceField;
 }
 
-public struct PositionalSphereTrace : ISphereTraceIntersection
+// Essential intersections
+public struct PositionIntersection : ISphereTraceIntersection
 {
     public float t;
     public float3 p;
@@ -111,7 +114,7 @@ public struct PositionalSphereTrace : ISphereTraceIntersection
     }
 }
 
-public struct PositionNormalSphereTrace : ISphereTraceIntersection
+public struct PositionNormalIntersection : ISphereTraceIntersection, IRayMarchIntersection
 {
     public float t;
     public float3 p;
@@ -148,6 +151,42 @@ public struct PositionNormalSphereTrace : ISphereTraceIntersection
             if (t > tMax)
                 return This(0.0, float3(0.0), float3(0.0));
             t += d;
+        }
+
+        return This(0.0, float3(0.0), float3(0.0));
+    }
+
+    public static This rayMarch<Object>(Object object, Ray ray, int maxIters, float stepSize, float tMin, float tMax)
+        where Object : ISignedDistanceField
+    {
+        float t = tMin;
+        for (int i = 0; i < maxIters; i++)
+        {
+            float3 p = ray.origin + t * ray.direction;
+            float d = object.sdf(p);
+            if (abs(d) < 0.001)
+            {
+                // Calculate gradient
+                // TODO: use autodiff for this
+
+                float3 px_plus_eps = p + float3(1e-4, 0.0, 0.0);
+                float3 px_minus_eps = p - float3(1e-4, 0.0, 0.0);
+                float3 py_plus_eps = p + float3(0.0, 1e-4, 0.0);
+                float3 py_minus_eps = p - float3(0.0, 1e-4, 0.0);
+                float3 pz_plus_eps = p + float3(0.0, 0.0, 1e-4);
+                float3 pz_minus_eps = p - float3(0.0, 0.0, 1e-4);
+
+                float dx = object.sdf(px_plus_eps) - object.sdf(px_minus_eps);
+                float dy = object.sdf(py_plus_eps) - object.sdf(py_minus_eps);
+                float dz = object.sdf(pz_plus_eps) - object.sdf(pz_minus_eps);
+
+                float3 n = normalize(float3(dx, dy, dz));
+
+                return This(t, p, n);
+            }
+            if (t > tMax)
+                return This(0.0, float3(0.0), float3(0.0));
+            t += stepSize;
         }
 
         return This(0.0, float3(0.0), float3(0.0));

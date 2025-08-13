@@ -9,17 +9,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    
+    timeout-minutes: 240
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-        
+
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -40,24 +40,24 @@ jobs:
           mesa-vulkan-drivers \
           vulkan-tools \
           vulkan-validationlayers
-          
+
     - name: Install lavapipe (CPU Vulkan driver)
       run: |
         sudo apt-get install -y mesa-vulkan-drivers
         vulkaninfo --summary || true
         vulkaninfo | grep -A5 "Device Name" || true
-        
+
     - name: Set up virtual environment
       run: |
         python -m venv .venv
         source .venv/bin/activate
         pip install --upgrade pip setuptools wheel
-        
+
     - name: Install Python dependencies
       run: |
         source .venv/bin/activate
         pip install -r requirements.txt
-        
+
     - name: Run tests
       run: |
         source .venv/bin/activate

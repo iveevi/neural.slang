@@ -8,6 +8,8 @@ public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int Out = N;
+    
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, N>
@@ -47,10 +49,12 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int Out = 2 * Levels * Dim;
+
     [BackwardDerivative(evalBwd)]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, 2 * Levels * Dim>
+        where OutputVector : IVector<T, Out>
     {
         static_assert(Levels > 0, "Levels must be greater than 0");
 
@@ -77,7 +81,7 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
 
     void evalBwd<InputVector, OutputVector>(inout DifferentialPair<InputVector> dinput, OutputVector.Differential doutput)
         where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, 2 * Levels * Dim>
+        where OutputVector : IVector<T, Out>
     {
         let p = __slang_noop_cast<InputVector>(dinput.p);
         var d = __slang_noop_cast<InputVector>(dinput.d);
@@ -173,6 +177,8 @@ public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : 
         {
             static_assert(false, "Not implemented");
         }
+
+        return T(0.0);
     }
 
     public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
@@ -226,5 +232,6 @@ public struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : I
         where InputVector : IVector<T, Dim>
     {
         static_assert(false, "Not implemented");
+        return 0;
     }
 }

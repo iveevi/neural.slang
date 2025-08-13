@@ -7,14 +7,14 @@ extern static const int Hidden;
 extern static const int HiddenLayers;
 extern static const int Levels;
 
+typealias Encoder = FrequencyEncoder<float, In, Levels>;
 typealias Network = NetworkWithAddresses<
     In,
     Out,
-    2 * Levels * In,
+    Encoder.Out,
     Hidden,
-    Levels,
     HiddenLayers,
-    FrequencyEncoder<float, In, Levels>,
+    Encoder,
     ReLU<float>
 >;
 
