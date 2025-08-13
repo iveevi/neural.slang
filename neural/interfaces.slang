@@ -63,7 +63,7 @@ public interface IVector<T, int N> : /* IArithmetic, */ IDifferentiable
         where Storage.Differential == Storage
         where OutputVector : IVector<T, OutputSize>
         where OutputVector.Differential == OutputVector;
-
+        
     // Necessary arithmetic operations
     This add(This other);
     This mul(This other);
@@ -75,6 +75,8 @@ public interface IVector<T, int N> : /* IArithmetic, */ IDifferentiable
     This max(T other);
     This max(This other);
     This step(T threshold);
+    This sin();
+    This cos();
     T sum();
 }
 

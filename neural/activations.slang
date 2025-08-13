@@ -80,3 +80,20 @@ public struct LeakyReLU<T> : IActivation<T>
         dinput = DifferentialPair<Vector>(dinput.p, d);
     }
 }
+
+//////////
+// Sine //
+//////////
+
+public struct Sine<T> : IActivation<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
+{
+    [NoDiffThis, BackwardDifferentiable]
+    public Vector eval<int N, Vector>(Vector input)
+        where Vector : IVector<T, N>
+        where Vector.Differential == Vector
+    {
+        return input.sin();
+    }
+}
