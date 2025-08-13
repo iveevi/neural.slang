@@ -77,6 +77,7 @@ public interface IVector<T, int N> : /* IArithmetic, */ IDifferentiable
     This step(T threshold);
     This sin();
     This cos();
+    This abs();
     T sum();
 }
 

@@ -234,6 +234,37 @@ public struct InlineVector<T, int N> : IVector<T, N>
         dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.sin().neg(), doutput).add(dthis.d));
     }
 
+    [BackwardDerivative(absBwd)]
+    public This abs()
+    {
+        This result = this;
+
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = abs(result.data[i]);
+
+        return result;
+    }
+
+    static void absBwd(
+
+        inout DifferentialPair<This> dthis,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.sign(), doutput).add(dthis.d));
+    }
+
+    public This sign()
+    {
+        This result = this;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = (result.data[i] > T(0.0)) ? T(1.0) : T(-1.0);
+
+        return result;
+    }
+
     [BackwardDerivative(sumBwd)]
     public T sum()
     {
