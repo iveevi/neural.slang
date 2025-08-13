@@ -13,9 +13,9 @@ public struct RayFrame
     public float3 horizontal;
     public float3 vertical;
 
-    public Ray operator()(float u, float v)
+    public Ray rayAt(float2 uv)
     {
-        float3 dir = normalize(lower_left + u * horizontal + v * vertical - origin);
+        float3 dir = normalize(lower_left + uv.x * horizontal + uv.y * vertical - origin);
         return Ray(origin, dir);
     }
 };

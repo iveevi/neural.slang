@@ -2,6 +2,8 @@ module mesh;
 
 public struct TriangleMesh
 {
-    public RWStructuredBuffer<float3>.Handle vertices;
-    public RWStructuredBuffer<uint3>.Handle triangles;
+    // TODO: make this bindless
+    public RWStructuredBuffer<float[3]> vertices;
+    public RWStructuredBuffer<uint[3]> triangles;
+    public uint triangleCount;
 };

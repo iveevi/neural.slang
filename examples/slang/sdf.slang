@@ -55,14 +55,22 @@ public extension Triangle : ISignedDistanceField
 
 public extension TriangleMesh : ISignedDistanceField
 {
+    // TODO: interior testing using winding number test...
+
+    // TODO: cache hints... bbox culling...
     public float sdf(float3 p)
     {
         float min_d = 1e10;
 
-        for (int i = 0; i < triangles.getCount(); i++)
+        for (int i = 0; i < triangleCount; i++)
         {
-            uint3 idx = triangles[i];
-            let tri = Triangle(vertices[idx.x], vertices[idx.y], vertices[idx.z]);
+            uint[3] idx = triangles[i];
+            let v0 = float3(vertices[idx[0]][0], vertices[idx[0]][1], vertices[idx[0]][2]);
+            let v1 = float3(vertices[idx[1]][0], vertices[idx[1]][1], vertices[idx[1]][2]);
+            let v2 = float3(vertices[idx[2]][0], vertices[idx[2]][1], vertices[idx[2]][2]);
+            let tri = Triangle(v0, v1, v2);
+            // uint3 idx = triangles[i];
+            // let tri = Triangle(vertices[idx.x], vertices[idx.y], vertices[idx.z]);
             float d = tri.sdf(p);
             if (d < min_d)
                 min_d = d;
@@ -87,14 +95,14 @@ public struct PositionalSphereTrace : ISphereTraceIntersection
     public static This sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
         where Object : ISignedDistanceField
     {
-        float t = 0.0;
+        float t = tMin;
         for (int i = 0; i < maxIters; i++)
         {
             float3 p = ray.origin + t * ray.direction;
             float d = object.sdf(p);
-            if (d < 0.001 || t > tMax)
+            if (abs(d) < 0.001)
                 return This(t, p);
-            if (t < tMin)
+            if (t > tMax)
                 return This(0.0, float3(0.0));
             t += d;
         }
@@ -112,12 +120,12 @@ public struct PositionNormalSphereTrace : ISphereTraceIntersection
     public static This sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
         where Object : ISignedDistanceField
     {
-        float t = 0.0;
+        float t = tMin;
         for (int i = 0; i < maxIters; i++)
         {
             float3 p = ray.origin + t * ray.direction;
             float d = object.sdf(p);
-            if (d < 0.001 || t > tMax)
+            if (abs(d) < 0.001)
             {
                 // Calculate gradient
                 // TODO: use autodiff for this
@@ -137,7 +145,7 @@ public struct PositionNormalSphereTrace : ISphereTraceIntersection
                 
                 return This(t, p, n);
             }
-            if (t < tMin)
+            if (t > tMax)
                 return This(0.0, float3(0.0), float3(0.0));
             t += d;
         }
