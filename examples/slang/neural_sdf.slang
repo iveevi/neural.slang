@@ -98,9 +98,9 @@ void sample_reference(uint3 tid : SV_DispatchThreadID)
 }
 
 // Evaluating gradients
-uniform RWStructuredBuffer<float> lossBuffer;
+// uniform RWStructuredBuffer<float> lossBuffer;
 uniform float lossBoost;
-uniform uint time;
+// uniform uint time;
 
 float loss<Object>(Network network, no_diff Object object, no_diff float3 sample)
     where Object : ISignedDistanceField
@@ -120,7 +120,7 @@ float loss<Object>(Network network, no_diff Object object, no_diff float3 sample
 [numthreads(32, 1, 1)]
 void gradient(uint3 tid : SV_DispatchThreadID)
 {
-    uint64_t seed = uint64_t(tid.x) << 32 | uint64_t(time);
+    // uint64_t seed = uint64_t(tid.x) << 32 | uint64_t(time);
 
     // PCG pcg = PCG(seed);
 
@@ -130,16 +130,17 @@ void gradient(uint3 tid : SV_DispatchThreadID)
     // sampleBuffer[tid.x] = sample;
 
     float3 sample = sampleBuffer[tid.x];
+    float expected = sdfBuffer[tid.x];
     
-    Sphere object = Sphere(float3(0, 0, 0), 1);
+    // Sphere object = Sphere(float3(0, 0, 0), 1);
 
-    // TODO: needs proper SDF to work...
-    // TriangleMesh object = mesh;
-    // Box object = Box(float3(0, 0, 0), float3(1, 1, 1));
+    // // TODO: needs proper SDF to work...
+    // // TriangleMesh object = mesh;
+    // // Box object = Box(float3(0, 0, 0), float3(1, 1, 1));
 
-    let expected = object.sdf(sample);
-    let lossValue = loss(network, object, sample);
-    lossBuffer[tid.x] = lossValue;
+    // let expected = object.sdf(sample);
+    // let lossValue = loss(network, object, sample);
+    // lossBuffer[tid.x] = lossValue;
 
     network.backward(
         Network.InputVec(float[3](sample.x, sample.y, sample.z)),
