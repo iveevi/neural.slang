@@ -24,8 +24,7 @@ void reference(uint3 tid : SV_DispatchThreadID)
     let ray = rayFrame.rayAt(uv);
     let sphere = Sphere(float3(0, 0, 0), 1);
 
-    let intx = PositionNormalIntersection.sphereTrace((TriangleMesh) mesh, ray, 100, 0.001, 10.0);
-    // let intx = PositionNormalIntersection.sphereTrace(sphere, ray, 100, 0.001, 10.0);
+    let intx = PositionNormalIntersection.sphereTrace((TriangleMesh) mesh, ray, 100, 1e-3, 10.0);
     if (intx.t > 0.0)
         targetTexture.Store(tid.xy, float4(intx.n * 0.5 + 0.5, 1));
     else
@@ -69,23 +68,32 @@ void neural(uint3 tid : SV_DispatchThreadID)
     let sdf = network.sdf(oneAway);
 
     let intx = PositionNormalIntersection.sphereTrace((Network) network, ray, 100, 1e-3, 10.0);
-    // let intx = PositionNormalIntersection.rayMarch((Network) network, ray, 10000, 0.001, 0.001, 10.0);
     if (intx.t > 0.0)
         targetTexture.Store(tid.xy, float4(intx.n * 0.5 + 0.5, 1));
     else
         targetTexture.Store(tid.xy, float4(0, 0, 0, 1));
 }
 
-// Sampling the network
+// Sampling the neural model
 uniform RWStructuredBuffer<float3, ScalarDataLayout> sampleBuffer;
 uniform RWStructuredBuffer<float> sdfBuffer;
 
 [shader("compute")]
 [numthreads(32, 1, 1)]
-void sample(uint3 tid : SV_DispatchThreadID)
+void sample_neural(uint3 tid : SV_DispatchThreadID)
 {
     float3 sample = sampleBuffer[tid.x];
     let sdf = network.sdf(sample);
+    sdfBuffer[tid.x] = sdf;
+}
+
+// Sampling the reference mesh
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void sample_reference(uint3 tid : SV_DispatchThreadID)
+{
+    float3 sample = sampleBuffer[tid.x];
+    let sdf = mesh.sdf(sample);
     sdfBuffer[tid.x] = sdf;
 }
 

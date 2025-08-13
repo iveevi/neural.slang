@@ -6,129 +6,10 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import polyscope as ps
-from dataclasses import dataclass
 from scipy.ndimage import gaussian_filter
-from ..networks.addresses import Network
 from common import *
-
-@dataclass
-class RayFrame:
-    origin: np.ndarray
-    lower_left: np.ndarray
-    horizontal: np.ndarray
-    vertical: np.ndarray
-    
-    def dict(self):
-        return {
-            "origin": spy.float3(self.origin.tolist()),
-            "lower_left": spy.float3(self.lower_left.tolist()),
-            "horizontal": spy.float3(self.horizontal.tolist()),
-            "vertical": spy.float3(self.vertical.tolist()),
-        }
-
-
-@dataclass
-class Transform:
-    position: np.ndarray
-    rotation: np.ndarray
-    scale: np.ndarray
-
-    @staticmethod
-    def new(position: np.ndarray = np.array((0.0, 0.0, 0.0)),
-            rotation: np.ndarray = np.array((0.0, 0.0, 0.0)),
-            scale: np.ndarray = np.array((1.0, 1.0, 1.0))):
-        return Transform(position, rotation, scale)
-    
-    def _rotation_matrix(self) -> np.ndarray:
-        rx, ry, rz = np.radians(self.rotation)
-        
-        cos_x, sin_x = np.cos(rx), np.sin(rx)
-        cos_y, sin_y = np.cos(ry), np.sin(ry)
-        cos_z, sin_z = np.cos(rz), np.sin(rz)
-        
-        Rx = np.array([
-            [1, 0, 0],
-            [0, cos_x, -sin_x],
-            [0, sin_x, cos_x]
-        ])
-        
-        Ry = np.array([
-            [cos_y, 0, sin_y],
-            [0, 1, 0],
-            [-sin_y, 0, cos_y]
-        ])
-        
-        Rz = np.array([
-            [cos_z, -sin_z, 0],
-            [sin_z, cos_z, 0],
-            [0, 0, 1]
-        ])
-        
-        return Rz @ Ry @ Rx
-    
-    @property
-    def forward(self) -> np.ndarray:
-        rotation_matrix = self._rotation_matrix()
-        return -rotation_matrix[:, 2]
-    
-    @property
-    def right(self) -> np.ndarray:
-        rotation_matrix = self._rotation_matrix()
-        return rotation_matrix[:, 0]
-    
-    @property
-    def up(self) -> np.ndarray:
-        rotation_matrix = self._rotation_matrix()
-        return rotation_matrix[:, 1]
-    
-    def axes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        rotation_matrix = self._rotation_matrix()
-        right = rotation_matrix[:, 0]
-        up = rotation_matrix[:, 1]
-        forward = -rotation_matrix[:, 2]
-        return right, up, forward
-
-
-@dataclass
-class Camera:
-    transform: Transform
-    fov: float
-    aspect_ratio: float
-    near: float
-    far: float
-    
-    @staticmethod
-    def new(transform: Transform = Transform.new(),
-            fov: float = 45,
-            aspect_ratio: float = 1,
-            near: float = 0.1,
-            far: float = 100):
-        return Camera(transform, fov, aspect_ratio, near, far)
-    
-    def rayframe(self) -> RayFrame:
-        normalize = lambda x: x / np.linalg.norm(x)
-        
-        _, up, forward = self.transform.axes()
-        
-        vfov = np.radians(self.fov)
-        h = np.tan(vfov / 2)
-        vheight = 2 * h
-        vwidth = vheight * self.aspect_ratio
-        
-        w = normalize(-forward)
-        u = normalize(np.cross(up, w))
-        v = np.cross(w, u)
-
-        horizontal = u * vwidth
-        vertical = v * vheight
-
-        return RayFrame(
-            origin=self.transform.position,
-            lower_left=self.transform.position - horizontal/2 - vertical/2 - w,
-            horizontal=horizontal,
-            vertical=vertical,
-        )
-
+from ..networks.addresses import Network
+from ..render_util import *
 
 class Pipeline:
     @staticmethod
@@ -158,7 +39,8 @@ class Pipeline:
 
         self.reference_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "reference")
         self.neural_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "neural")
-        self.sample_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "sample")
+        self.sample_neural_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "sample_neural")
+        self.sample_reference_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "sample_reference")
         self.gradient_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "gradient")
         self.optimize_pipeline = self.load_pipeline(device, self.module, [self.specialization_module], "optimize")
 
@@ -190,16 +72,29 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def sample(self, network: Network, sample_buffer: spy.Buffer, sdf_buffer: spy.Buffer):
+    def sample_neural(self, network: Network, sample_buffer: spy.Buffer, sdf_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.sample_pipeline)
+            shader_object = cmd.bind_pipeline(self.sample_neural_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.network = network.dict()
             cursor.sampleBuffer = sample_buffer
             cursor.sdfBuffer = sdf_buffer
-            cmd.dispatch(thread_count=(sample_buffer.size, 1, 1))
+            cmd.dispatch(thread_count=(sample_count, 1, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
+        
+    def sample_reference(self, mesh: TriangleMesh, sample_buffer: spy.Buffer, sdf_buffer: spy.Buffer, sample_count: int):
+        command_encoder = self.device.create_command_encoder()
+        
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.sample_reference_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mesh = mesh.dict()
+            cursor.sampleBuffer = sample_buffer
+            cursor.sdfBuffer = sdf_buffer
+            cmd.dispatch(thread_count=(sample_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
 
@@ -235,26 +130,7 @@ class Pipeline:
         return self.module.layout.get_type_layout(type_layout)
 
 
-@dataclass
-class TriangleMesh:
-    vertices: spy.Buffer
-    triangles: spy.Buffer
-    triangle_count: int
-
-    @staticmethod
-    def new(device: spy.Device, mesh: trimesh.Trimesh):
-        vertices = create_buffer_32b(device, mesh.vertices.astype(np.float32), 3)
-        triangles = create_buffer_32b(device, mesh.faces.astype(np.uint32), 3)
-        return TriangleMesh(vertices, triangles, len(mesh.faces))
-
-    def dict(self):
-        return {
-            "vertices": self.vertices,
-            "triangles": self.triangles,
-            "triangleCount": self.triangle_count,
-        }
-
-
+# TODO: design a main method agnostic to the pipeline... also for the other examples...
 def main():
     mesh = trimesh.load_mesh(ROOT / "resources" /"suzanne.obj")
 
@@ -275,7 +151,7 @@ def main():
     ps.init()
 
     history = []
-    for frame in tqdm.trange(10000, desc="training"):
+    for frame in tqdm.trange(1000, desc="training"):
         samples = 3 * (np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) * 2 - 1)
         sample_buffer.copy_from_numpy(samples)
 
@@ -284,12 +160,6 @@ def main():
         history.append(losses.mean())
 
         pipeline.optimize(network)
-
-        # samples = sample_buffer.to_numpy().view(np.float32).reshape(-1, 3)
-        # print("samples", samples.shape)
-        # print("samples", samples)
-        # cloud = ps.register_point_cloud("samples", samples)
-        # ps.show()
 
     history = np.array(history)
     sns.lineplot(history, alpha=0.5)
@@ -314,19 +184,30 @@ def main():
     samples = create_buffer_32b(device, samples.astype(np.float32), 3)
     sdf = create_buffer_32b(device, sdf.astype(np.float32), 1)
     
-    pipeline.sample(network, samples, sdf)
+    pipeline.sample_neural(network, samples, sdf, SAMPLE_COUNT)
 
-    samples = samples.to_numpy().view(np.float32).reshape(-1, 3)
-    sdf = sdf.to_numpy().view(np.float32)
-    print("samples", samples.shape)
-    print("sdf", sdf.shape)
+    samples_np = samples.to_numpy().view(np.float32).reshape(-1, 3)
+    sdf_np = sdf.to_numpy().view(np.float32)
+    print("samples", samples_np.shape)
+    print("sdf", sdf_np.shape)
 
-    ps.init()
-    cloud = ps.register_point_cloud("samples", samples)
-    cloud.add_scalar_quantity("sdf", sdf)
+    # ps.init()
+    # cloud = ps.register_point_cloud("samples", samples_np)
+    # cloud.add_scalar_quantity("sdf", sdf_np)
+    # ps.show()
+    
+    # Visualize the reference mesh
+    pipeline.sample_reference(mesh, samples, sdf, SAMPLE_COUNT)
+    
+    samples_np = samples.to_numpy().view(np.float32).reshape(-1, 3)
+    sdf_np = sdf.to_numpy().view(np.float32)
+    
+    print("samples", samples_np.shape)
+    print("sdf", sdf_np.shape)
+    
+    cloud = ps.register_point_cloud("samples", samples_np)
+    cloud.add_scalar_quantity("sdf", sdf_np)
     ps.show()
-
-    # TODO: sdf query of the reference as well to test the interior...
 
     # Define consistent dimensions
     WINDOW_WIDTH = 512

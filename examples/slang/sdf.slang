@@ -10,6 +10,8 @@ float dot2(float3 v) { return dot(v, v); }
 public interface ISignedDistanceField
 {
     public float sdf(float3 p);
+
+    // TODO: default normal vector computation
 }
 
 // Essential primitives
