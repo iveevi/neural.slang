@@ -62,3 +62,29 @@ class Transform:
         up = rotation_matrix[:, 1]
         forward = -rotation_matrix[:, 2]
         return right, up, forward
+    
+    def look_at(self, target: np.ndarray, world_up: np.ndarray = np.array((0.0, 1.0, 0.0))):
+        forward = target - self.position
+        forward = forward / np.linalg.norm(forward)
+        
+        right = np.cross(forward, world_up)
+        right = right / np.linalg.norm(right)
+        
+        up = np.cross(right, forward)
+        
+        rotation_matrix = np.column_stack([right, up, -forward])
+        
+        sy = np.sqrt(rotation_matrix[0, 0] * rotation_matrix[0, 0] + rotation_matrix[1, 0] * rotation_matrix[1, 0])
+        
+        singular = sy < 1e-6
+        
+        if not singular:
+            x = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
+            y = np.arctan2(-rotation_matrix[2, 0], sy)
+            z = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+        else:
+            x = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
+            y = np.arctan2(-rotation_matrix[2, 0], sy)
+            z = 0
+        
+        self.rotation = np.degrees(np.array([x, y, z]))
