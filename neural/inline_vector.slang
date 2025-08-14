@@ -286,6 +286,17 @@ public struct InlineVector<T, int N> : IVector<T, N>
             dadd(dthis.d, This(__slang_noop_cast<T>(doutput)))
         );
     }
+
+    // Convert from vectors
+    public static This from(vector<T, N> v)
+    {
+        This result = This();
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = v[i];
+
+        return result;
+    }
 }
 
 // Ordinary storage

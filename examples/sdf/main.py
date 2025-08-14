@@ -15,7 +15,7 @@ def main(Network, RenderingPipeline, TrainingPipeline):
     device = create_device()
 
     hidden = 32
-    hidden_layers = 2
+    hidden_layers = 3
     
     network = Network(device, hidden=hidden, hidden_layers=hidden_layers, levels=0, input=3, output=1)
     rendering_pipeline = RenderingPipeline(device, network)
@@ -26,7 +26,7 @@ def main(Network, RenderingPipeline, TrainingPipeline):
     sample_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 3), dtype=np.float32), 3)
     sdf_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
 
-    mesh_obj = pv.MeshObjectFactory(ROOT / "resources" / "spot.obj")
+    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "suzanne.obj"))
     mesh_sdf = pv.MeshSDF(mesh_obj)
 
     def target_sdf(samples: np.ndarray) -> np.ndarray:

@@ -17,7 +17,7 @@ uniform uint2 targetResolution;
 extern static const int Hidden;
 extern static const int HiddenLayers;
 extern static const int Levels;
-extern struct ColorMap : IColorMap = RdBu;
+extern struct ColorMap : IColorMap = Plasma;
 
 typealias Encoder = IdentityEncoder<float, 3>;
 
@@ -34,7 +34,7 @@ public extension Network : ISignedDistanceField
 {
     public float sdf(float3 p)
     {
-        return forward(Network.InputVec(float[3](p.x, p.y, p.z)))[0];
+        return forward(Network.InputVec.from(p))[0];
     }
 }
 

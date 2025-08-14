@@ -9,3 +9,4 @@ tqdm
 trimesh
 pytorch-volumetric
 polyscope
+PyQt6
