@@ -196,6 +196,75 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return result;
     }
 
+    [BackwardDerivative(sinBwd)]
+    public This sin()
+    {
+        This result = this;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = sin(result.data[i]);
+
+        return result;
+    }
+
+    static void sinBwd(
+        inout DifferentialPair<This> dthis,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.cos(), doutput).add(dthis.d));
+    }
+
+    [BackwardDerivative(cosBwd)]
+    public This cos()
+    {
+        This result = this;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = cos(result.data[i]);
+
+        return result;
+    }
+
+    static void cosBwd(
+        inout DifferentialPair<This> dthis,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.sin().neg(), doutput).add(dthis.d));
+    }
+
+    [BackwardDerivative(absBwd)]
+    public This abs()
+    {
+        This result = this;
+
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = abs(result.data[i]);
+
+        return result;
+    }
+
+    static void absBwd(
+
+        inout DifferentialPair<This> dthis,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.sign(), doutput).add(dthis.d));
+    }
+
+    public This sign()
+    {
+        This result = this;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = (result.data[i] > T(0.0)) ? T(1.0) : T(-1.0);
+
+        return result;
+    }
+
     [BackwardDerivative(sumBwd)]
     public T sum()
     {

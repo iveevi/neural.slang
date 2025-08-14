@@ -2,6 +2,7 @@ import pathlib
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
+from .pytorch import PyTorchNetwork
 from common import *
 
 
@@ -85,6 +86,19 @@ class Network:
             "parameterCount": self.parameter_count,
         }
 
+    def copy_from_pytorch(self, pytorch: PyTorchNetwork):
+        # Check that the pytorch network has the same structure as the slang network
+        assert self.hidden == pytorch.hidden
+        assert self.hidden_layers == pytorch.hidden_layers
+        assert self.levels == pytorch.levels
+        assert self.input == pytorch.input
+        assert self.output == pytorch.output
+
+        # Copy each layer of the pytorch network to the slang network
+        for i, layer in enumerate(pytorch.layers):
+            self.copy_weights(i, layer)
+
+
 class TrainingPipeline:
     @staticmethod
     def compile_specialization_module(
@@ -102,10 +116,13 @@ class TrainingPipeline:
         export static const int HiddenLayers = {hidden_layers};
         export static const int Levels = {levels};
         """
-        return device.load_module_from_source("specialization", source)
+        return device.load_module_from_source("network_addresses_specialization", source)
 
     def __init__(self, device: spy.Device, network: Network):
-        SOURCE = ROOT / "examples" / "slang" / "network_with_addresses_kernels.slang"
+        if network.levels == 0:
+            SOURCE = ROOT / "examples" / "slang" / "kernels" / "addresses_identity_kernels.slang"
+        else:
+            SOURCE = ROOT / "examples" / "slang" / "kernels" / "addresses_frequency_kernels.slang"
 
         self.device = device
 

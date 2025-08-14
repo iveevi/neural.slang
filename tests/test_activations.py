@@ -14,6 +14,7 @@ def create_specialization_module(device, in_size):
     return device.load_module_from_source("specialization", source)
 
 
+# TODO: parameterize with types of vectors
 @pytest.mark.parametrize("random_seed", [0])
 @pytest.mark.parametrize("in_size", [16, 32, 64, 128])
 def test_relu(device, make_kernel, random_seed, in_size):
@@ -158,6 +159,76 @@ def test_leaky_relu_derivative(device, make_kernel, random_seed, in_size, alpha)
     # Use ones to get the derivative of each element w.r.t. its input
     gradient_tensor = torch.ones_like(leaky_relu_output)
     leaky_relu_output.backward(gradient_tensor)
+    
+    expected = input_torch.grad.numpy()
+    
+    assert_close(output, expected)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_sine(device, make_kernel, random_seed, in_size):
+    np.random.seed(random_seed)
+    batch_size = 16
+    data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("sine", link_modules=[specialization_module])
+    
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "input": input_buffer,
+                "output": output_buffer,
+            }
+        },
+    )
+    
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
+    expected = np.sin(data)
+    
+    assert_close(output, expected)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_sine_derivative(device, make_kernel, random_seed, in_size):
+    np.random.seed(random_seed)
+    batch_size = 16
+    data = 2 * np.random.rand(batch_size, in_size).astype(np.float32) - 1
+
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("sine_derivative", link_modules=[specialization_module])
+    
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "input": input_buffer,
+                "output": output_buffer,
+            }
+        },
+    )
+    
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
+    
+    # Use PyTorch backward to compute Sine derivative
+    input_torch = torch.tensor(data, requires_grad=True)
+    
+    # Apply Sine activation
+    sine_output = torch.sin(input_torch)
+    
+    # For vector output, we need to provide gradient tensor for backward()
+    # Use ones to get the derivative of each element w.r.t. its input
+    gradient_tensor = torch.ones_like(sine_output)
+    sine_output.backward(gradient_tensor)
     
     expected = input_torch.grad.numpy()
     

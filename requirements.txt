@@ -7,3 +7,5 @@ slangpy
 torch
 tqdm
 trimesh
+pytorch-volumetric
+polyscope

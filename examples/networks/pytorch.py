@@ -15,11 +15,14 @@ def frequency_encode(x: torch.Tensor, levels: int) -> torch.Tensor:
 
 
 class PyTorchNetwork(nn.Module):
-    def __init__(self, hidden: int, levels: int, input: int, output: int, hidden_layers: int = 0):
+    def __init__(self, hidden: int, hidden_layers: int = 0, levels: int = 0, input: int = 3, output: int = 1):
         super().__init__()
         encoded_size = 2 * levels * input if levels > 0 else input
         self.levels = levels
+        self.hidden = hidden
         self.hidden_layers = hidden_layers
+        self.input = input
+        self.output = output
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(encoded_size, hidden))
         for i in range(hidden_layers):
