@@ -113,7 +113,7 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
 ////////////////
 
 public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable & IConvertibleToInt
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
 {
     Array<Storage.Address, Levels> addresses;
@@ -211,7 +211,7 @@ public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : 
 ///////////////
 
 public struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable & IConvertibleToInt
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
 {
     Array<Storage.Address, Levels> addresses;
