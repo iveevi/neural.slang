@@ -15,11 +15,6 @@ public struct InlineVector<T, int N> : IVector<T, N>
     
     public __init() {}
     
-    public __init(int value) {
-        for (int i = 0; i < N; i++)
-            data[i] = T(value);
-    }
-    
     public __init(T value) {
         for (int i = 0; i < N; i++)
             data[i] = value;

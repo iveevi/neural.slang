@@ -15,10 +15,6 @@ public struct CoopVector<T, int N> : IVector<T, N>
     
     public __init() {}
     
-    public __init(int value) {
-        data.fill(T(value));
-    }
-    
     public __init(T value) {
         data.fill(value);
     }

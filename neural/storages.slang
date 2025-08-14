@@ -34,12 +34,6 @@ public struct StructuredBufferStorage<T> : IStorage<T>
         buffer[address] = value;
     }
 
-    public BufferType getBufferFromAddress(Address address)
-    {
-        let ptr = &buffer[address];
-        return bit_cast<BufferType>(ptr);
-    }
-
     public static Address getOffset(Address base, int elements)
     {
         return base + elements;
