@@ -113,95 +113,105 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
 ////////////////
 
 public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable & IConvertibleToInt
-    where Storage : IStorage<T>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+    where Storage : IBindlessStorage<T>
 {
-    Array<Storage.Address, Levels> addresses;
-    int gridResolution;
+    public typealias Differential = This;
 
-    public T evalLevel<InputVector>(Storage storage, Storage.Address levelAddressOffset, InputVector input, int level, int feature)
-        where InputVector : IVector<T, Dim>
+    public static const int Out = Features * Levels;
+    
+    Array<Storage, Levels> addresses;
+    Array<int, Levels> gridResolutions;
+
+    public __init(Array<Storage, Levels> addresses, Array<int, Levels> gridResolutions)
     {
-        if (Dim == 1)
-        {
-            // Linear interpolation
-            let index = input[0] * T(gridResolution);
-            let index0 = floor(index);
-            let index1 = ceil(index);
-
-            let t = index - index0;
-            let value0 = storage.read(Storage.getOffset(levelAddressOffset, index0.toInt()));
-            let value1 = storage.read(Storage.getOffset(levelAddressOffset, index1.toInt()));
-            return lerp(value0, value1, t);
-        }
-        else if (Dim == 2)
-        {
-            // Bilinear interpolation
-            let x = input[0] * T(gridResolution);
-            let y = input[1] * T(gridResolution);
-            
-            let x0 = floor(x);
-            let x1 = ceil(x);
-            let y0 = floor(y);
-            let y1 = ceil(y);
-            
-            let tx = x - x0;
-            let ty = y - y0;
-            
-            // Calculate grid dimensions
-            let gridSize = gridResolution + 1;
-            let gridElementsPerFeature = gridSize * gridSize;
-            
-            // Calculate grid indices for the four corners
-            let idx00 = y0.toInt() * gridSize + x0.toInt();
-            let idx01 = y1.toInt() * gridSize + x0.toInt();
-            let idx10 = y0.toInt() * gridSize + x1.toInt();
-            let idx11 = y1.toInt() * gridSize + x1.toInt();
-            
-            // Read values from the four corners with feature offset
-            let value00 = storage.read(Storage.getOffset(levelAddressOffset, idx00));
-            let value01 = storage.read(Storage.getOffset(levelAddressOffset, idx01));
-            let value10 = storage.read(Storage.getOffset(levelAddressOffset, idx10));
-            let value11 = storage.read(Storage.getOffset(levelAddressOffset, idx11));
-            
-            // Perform bilinear interpolation
-            let lerp0 = lerp(value00, value10, tx);
-            let lerp1 = lerp(value01, value11, tx);
-            return lerp(lerp0, lerp1, ty);
-        }
-        else if (Dim == 3)
-        {
-            static_assert(false, "Not implemented");
-        }
-        else
-        {
-            static_assert(false, "Not implemented");
-        }
-
-        return T(0.0);
+        this.addresses = addresses;
+        this.gridResolutions = gridResolutions;
     }
 
-    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+    // Dimension 1
+    [BackwardDifferentiable]
+    public void evalLevelLinear<InputVector, OutputVector>(InputVector input, int level, out OutputVector output)
         where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels>
+        where OutputVector : IVector<T, Out>
+    {
+        let address = addresses[level];
+        let resolution = gridResolutions[level];
+        
+        let scaledInput = input[0] * T(resolution - 1);
+        let i0 = clamp(floor(scaledInput).toInt(), 0, resolution - 1);
+        let i1 = clamp(ceil(scaledInput).toInt(), 0, resolution - 1);
+
+        let t = scaledInput - T(i0);
+
+        [ForceUnroll]
+        for (int feature = 0; feature < Features; feature++)
+        {
+            let value0 = address.getOffset(i0 * Features + feature).read();
+            let value1 = address.getOffset(i1 * Features + feature).read();
+            output[Features * level + feature] = lerp(value0, value1, t);
+        }
+    }
+
+    // Dimension 2
+    [BackwardDifferentiable]
+    public void evalLevelBilinear<InputVector, OutputVector>(InputVector input, int level, out OutputVector output)
+        where InputVector : IVector<T, Dim>
+        where OutputVector : IVector<T, Out>
+    {
+        let address = addresses[level];
+        let resolution = gridResolutions[level];
+
+        let scaledInput0 = input[0] * T(resolution - 1);
+        let scaledInput1 = input[1] * T(resolution - 1);
+
+        let i0 = clamp(floor(scaledInput0).toInt(), 0, resolution - 1);
+        let i1 = clamp(ceil(scaledInput0).toInt(), 0, resolution - 1);
+
+        let j0 = clamp(floor(scaledInput1).toInt(), 0, resolution - 1);
+        let j1 = clamp(ceil(scaledInput1).toInt(), 0, resolution - 1);
+
+        let tX = scaledInput0 - T(i0);
+        let tY = scaledInput1 - T(j0);
+
+        [ForceUnroll]
+        for (int feature = 0; feature < Features; feature++)
+        {
+            let value00 = address.getOffset(i0 * Features + feature).read();
+            let value01 = address.getOffset(i0 * Features + feature + 1).read();
+            let value10 = address.getOffset(i1 * Features + feature).read();
+            let value11 = address.getOffset(i1 * Features + feature + 1).read();
+
+            output[Features * level + feature] = lerp(
+                lerp(value00, value01, tX),
+                lerp(value10, value11, tX),
+                tY
+            );
+        }
+    }
+
+    [BackwardDifferentiable]
+    public void evalLevel<InputVector, OutputVector>(InputVector input, int level, out OutputVector output)
+        where InputVector : IVector<T, Dim>
+        where OutputVector : IVector<T, Out>
+    {
+        if (Dim == 1)
+            evalLevelLinear<InputVector, OutputVector>(input, level, output);
+        else if (Dim == 2)
+            evalLevelBilinear<InputVector, OutputVector>(input, level, output);
+        else
+            static_assert(false, "Not implemented");
+    }
+
+    [BackwardDifferentiable]
+    public OutputVector eval<InputVector, OutputVector>(InputVector input)
+        where InputVector : IVector<T, Dim>
+        where OutputVector : IVector<T, Out>
     {
         OutputVector output;
         [ForceUnroll]
         for (int level = 0; level < Levels; level++)
-        {
-            [ForceUnroll]
-            for (int feature = 0; feature < Features; feature++)
-            {
-                output[level * Features + feature] = evalLevel<InputVector>(
-                    storage,
-                    addresses[level],
-                    input,
-                    level,
-                    feature
-                );
-            }
-        }
-
+            evalLevel<InputVector, OutputVector>(input, level, output);
         return output;
     }
 }
@@ -210,28 +220,8 @@ public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : 
 // Hash grid //
 ///////////////
 
-public struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable & IConvertibleToInt
-    where Storage : IStorage<T>
+public struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+    where Storage : IBindlessStorage<T>
 {
-    Array<Storage.Address, Levels> addresses;
-    int gridResolution;
-    int hashTableSize;
-
-    [BackwardDifferentiable]
-    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
-        where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels>
-    {
-        OutputVector output;
-        static_assert(false, "Not implemented");
-        return output;
-    }
-
-    static uint spatialHash<InputVector>(InputVector input)
-        where InputVector : IVector<T, Dim>
-    {
-        static_assert(false, "Not implemented");
-        return 0;
-    }
 }
