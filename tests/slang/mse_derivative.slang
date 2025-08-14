@@ -10,6 +10,7 @@ struct MSEDerivativeGlobals
     RWStructuredBuffer<Vec> predicted;
     RWStructuredBuffer<Vec> expected;
     RWStructuredBuffer<Vec> output;
+    uint count;
 }
 
 ParameterBlock<MSEDerivativeGlobals> globals;
@@ -21,10 +22,13 @@ float eval_mse(Vec predicted, no_diff Vec expected)
     return mse_loss.eval<In, Vec>(predicted, expected);
 }
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     var predicted = globals.predicted[tid];
     var expected = globals.expected[tid];
     var dpredicted = diffPair(predicted);

@@ -72,7 +72,8 @@ def test_network_without_encoding(device, make_kernel, random_seed, in_size, hid
                 "layer2": layer2_buffer,
                 "layer3": layer3_buffer,
                 "layer4": layer4_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
@@ -132,7 +133,8 @@ def test_network_without_encoding_derivative(device, make_kernel, random_seed, i
                 "dlayer3": dlayer3_buffer,
                 "layer4": layer4_buffer,
                 "dlayer4": dlayer4_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
@@ -238,7 +240,8 @@ def test_network_without_encoding_address(device, make_kernel, random_seed, in_s
                 "layer2Address": layer2_address,
                 "layer3Address": layer3_address,
                 "layer4Address": layer4_address,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
@@ -317,7 +320,8 @@ def test_network_without_encoding_address_derivative(device, make_kernel, random
                 "layer2Address": layer2_address,
                 "layer3Address": layer3_address,
                 "layer4Address": layer4_address,
-            }
+            
+                    "count": batch_size,}
         },
     )
     

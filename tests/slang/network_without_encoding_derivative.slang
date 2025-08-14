@@ -24,6 +24,7 @@ struct NetworkWithoutEncodingDerivativeGlobals
     RWStructuredBuffer<float> dlayer3;
     RWStructuredBuffer<float> layer4;
     RWStructuredBuffer<float> dlayer4;
+    uint count;
 }
 
 ParameterBlock<NetworkWithoutEncodingDerivativeGlobals> globals;
@@ -49,10 +50,13 @@ OutputVec network_forward(
     return output;
 }
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
 
     let layer1 = StructuredBufferStorage<float>(globals.layer1);
     let layer2 = StructuredBufferStorage<float>(globals.layer2);

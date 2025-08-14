@@ -16,6 +16,7 @@ struct FeedForwardGlobals
     RWStructuredBuffer<float> dparameters;
 
     uint address;
+    uint count;
 }
 
 ParameterBlock<FeedForwardGlobals> globals;
@@ -27,10 +28,13 @@ OutputVec feed_forward(StructuredBufferStorage<float> parameters, InputVec input
     return network.eval<InputVec, OutputVec>(parameters, input);
 }
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     let tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     let parameters = StructuredBufferStorage<float>(globals.parameters);
     let dparameters = StructuredBufferStorage<float>(globals.dparameters);
     var dinput = diffPair(globals.input[tid]);

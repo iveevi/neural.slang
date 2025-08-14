@@ -10,14 +10,18 @@ struct LeakyReLUGlobals
     RWStructuredBuffer<Vec> input;
     RWStructuredBuffer<Vec> output;
     RWStructuredBuffer<float> alpha;
+    uint count;
 }
 
 ParameterBlock<LeakyReLUGlobals> globals;
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     var input = globals.input[tid];
     var alpha = globals.alpha[0];
     var output = LeakyReLU<float>(alpha).eval(input);

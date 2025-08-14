@@ -36,7 +36,8 @@ def test_mse_basic(device, make_kernel, random_seed, in_size):
                 "input": input_buffer,
                 "target": target_buffer,
                 "output": output_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
@@ -86,7 +87,8 @@ def test_mse_derivative(device, make_kernel, random_seed, in_size):
                 "predicted": predicted_buffer,
                 "expected": expected_buffer,
                 "output": output_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     

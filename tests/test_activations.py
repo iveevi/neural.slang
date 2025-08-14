@@ -33,6 +33,7 @@ def test_relu(device, make_kernel, random_seed, in_size):
             "globals": {
                 "input": input_buffer,
                 "output": output_buffer,
+                "count": batch_size,
             }
         },
     )
@@ -62,6 +63,7 @@ def test_relu_derivative(device, make_kernel, random_seed, in_size):
             "globals": {
                 "input": input_buffer,
                 "output": output_buffer,
+                "count": batch_size,
             }
         },
     )
@@ -106,6 +108,7 @@ def test_leaky_relu(device, make_kernel, random_seed, in_size, alpha):
                 "input": input_buffer,
                 "output": output_buffer,
                 "alpha": alpha_buffer,
+                "count": batch_size,
             }
         },
     )
@@ -138,6 +141,7 @@ def test_leaky_relu_derivative(device, make_kernel, random_seed, in_size, alpha)
                 "input": input_buffer,
                 "output": output_buffer,
                 "alpha": alpha_buffer,
+                "count": batch_size,
             }
         },
     )

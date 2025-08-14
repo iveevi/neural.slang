@@ -24,14 +24,18 @@ struct NetworkWithEncodingGlobals
     RWStructuredBuffer<float> layer2;  // Hidden -> Hidden  
     RWStructuredBuffer<float> layer3;  // Hidden -> Hidden
     RWStructuredBuffer<float> layer4;  // Hidden -> Out
+    uint count;
 }
 
 ParameterBlock<NetworkWithEncodingGlobals> globals;
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
 
     let layer1 = StructuredBufferStorage<float>(globals.layer1);
     let layer2 = StructuredBufferStorage<float>(globals.layer2);

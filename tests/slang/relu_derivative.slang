@@ -9,6 +9,7 @@ struct ReLUDerivativeGlobals
 {
     RWStructuredBuffer<Vec> input;
     RWStructuredBuffer<Vec> output;
+    uint count;
 }
 
 ParameterBlock<ReLUDerivativeGlobals> globals;
@@ -19,10 +20,13 @@ Vec eval(no_diff ReLU<float> activation, Vec input)
     return activation.eval(input);
 }
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     var activation = ReLU<float>();
     var input = Vec(globals.input[tid]);
     var dinput = diffPair(input, Vec(0.0));

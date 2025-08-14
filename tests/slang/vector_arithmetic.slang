@@ -13,14 +13,17 @@ struct VectorArithmeticGlobals
     RWStructuredBuffer<Vec> output_sub;
     RWStructuredBuffer<Vec> output_mul;
     RWStructuredBuffer<Vec> output_div;
+    uint count;
 }
 
 ParameterBlock<VectorArithmeticGlobals> globals;
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
     
     var a = globals.input_a[tid];
     var b = globals.input_b[tid];

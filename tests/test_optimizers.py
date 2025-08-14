@@ -41,6 +41,7 @@ def test_sgd(device, make_kernel, seed, num_params, lr, momentum):
                     "gradients": gradients_buffer,
                     "lr": lr,
                     "momentum": momentum,
+                    "count": num_params,
                 }
             },
             lr=lr,
@@ -100,6 +101,7 @@ def test_adam(device, make_kernel, seed, num_params):
                     "state": state_buffer,
                     "parameters": parameters_buffer,
                     "gradients": gradients_buffer,
+                    "count": num_params,
                 }
             },
         )

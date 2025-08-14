@@ -17,6 +17,7 @@ struct VectorArithmeticDerivativesGlobals
     RWStructuredBuffer<Vec> output_mul_b;
     RWStructuredBuffer<Vec> output_div_a;
     RWStructuredBuffer<Vec> output_div_b;
+    uint count;
 }
 
 ParameterBlock<VectorArithmeticDerivativesGlobals> globals;
@@ -45,10 +46,13 @@ Vec test_div(Vec a, Vec b)
     return a.div(b);
 }
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     
     var a = globals.input_a[tid];
     var b = globals.input_b[tid];

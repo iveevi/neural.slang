@@ -44,7 +44,8 @@ def test_vector_arithmetic_basic(device, make_kernel, random_seed, in_size):
                 "output_sub": output_sub_buffer,
                 "output_mul": output_mul_buffer,
                 "output_div": output_div_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
@@ -96,7 +97,8 @@ def test_vector_arithmetic_derivatives(device, make_kernel, random_seed, in_size
                 "input_a": input_a_buffer,
                 "input_b": input_b_buffer,
                 **output_buffers
-            }
+            ,
+                    "count": batch_size,}
         },
     )
     

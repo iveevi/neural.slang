@@ -16,6 +16,7 @@ struct FeedForwardGlobals
     RWStructuredBuffer<float>.Handle biases;
     RWStructuredBuffer<float>.Handle dweights;
     RWStructuredBuffer<float>.Handle dbiases;
+    uint count;
 }
 
 ParameterBlock<FeedForwardGlobals> globals;
@@ -28,10 +29,13 @@ OutputVec feed_forward_bindless(BindlessBufferStorage<float> weights, BindlessBu
     return activation.eval<Out, OutputVec>(linear_output);
 }
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     let tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     let weights = BindlessBufferStorage<float>(globals.weights, 0u);
     let biases = BindlessBufferStorage<float>(globals.biases, 0u);
     let dweights = BindlessBufferStorage<float>(globals.dweights, 0u);

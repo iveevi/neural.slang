@@ -14,14 +14,18 @@ struct FeedForwardGlobals
 
     RWStructuredBuffer<float>.Handle weights;
     RWStructuredBuffer<float>.Handle biases;
+    uint count;
 }
 
 ParameterBlock<FeedForwardGlobals> globals;
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     let tid = thread_id.x;
+    if (tid >= globals.count) return;
+
     let weights = BindlessBufferStorage<float>(globals.weights, 0u);
     let biases = BindlessBufferStorage<float>(globals.biases, 0u);
     let network = BindlessFeedForward<float, In, Out, BindlessBufferStorage<float>, ReLU<float>>(weights, biases, {});

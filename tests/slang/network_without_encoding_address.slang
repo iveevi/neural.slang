@@ -22,14 +22,18 @@ struct NetworkWithoutEncodingGlobals
     uint layer2Address;
     uint layer3Address;
     uint layer4Address;
+    uint count;
 }
 
 ParameterBlock<NetworkWithoutEncodingGlobals> globals;
 
+[numthreads(32, 1, 1)]
 [shader("compute")]
 void computeMain(uint3 thread_id : SV_DispatchThreadID)
 {
     int tid = thread_id.x;
+    if (tid >= globals.count) return;
+
 
     let parameters = StructuredBufferStorage<float>(globals.parameters);
 

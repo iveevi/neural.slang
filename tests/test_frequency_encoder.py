@@ -45,7 +45,8 @@ def test_frequency_encoder(device, make_kernel, random_seed, in_size, levels):
             "globals": {
                 "input": input_buffer,
                 "output": output_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
@@ -75,7 +76,8 @@ def test_frequency_encoder_derivative(device, make_kernel, random_seed, in_size,
             "globals": {
                 "input": input_buffer,
                 "dinput": dinput_buffer,
-            }
+            
+                    "count": batch_size,}
         },
     )
     
