@@ -3,15 +3,10 @@ import numpy as np
 import seaborn as sns
 import slangpy as spy
 import pathlib
-
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
-
 from common import *
 from ..networks.addresses import Network, TrainingPipeline
-
-
-
 
 
 def generate_random_signal(length: int) -> np.ndarray:

@@ -58,7 +58,7 @@ public struct Adam<T> : IOptimizer<T>
 
     public __init()
     {
-        this.alpha = T(0.001);
+        this.alpha = T(1e-3);
         this.beta1 = T(0.9);
         this.beta2 = T(0.999);
         this.epsilon = T(1e-8);

@@ -22,6 +22,8 @@ def generate_random_signal(length: int) -> np.ndarray:
     return signal
 
 
+# TODO: pass the pipeline and network here instead of creating them here
+# TODO: more general comparison framework with only difference being the data prep and training loop
 def main(address_mode: bool = True):
     # Prepare data
     length = 1024
@@ -38,8 +40,7 @@ def main(address_mode: bool = True):
     # Prepare PyTorch
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch_network = PyTorchNetwork(hidden=hidden, levels=levels, input=1, output=1, hidden_layers=hidden_layers).to(torch_device)
-    torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
-    # torch_optimizer = torch.optim.SGD(torch_network.parameters(), lr=0.001, momentum=0.9)
+    torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-8)
     torch_input = torch.from_numpy(time).to(torch_device)
     torch_signal = torch.from_numpy(signal).to(torch_device)
 
@@ -49,9 +50,9 @@ def main(address_mode: bool = True):
     if address_mode:
         slangpy_network = AddressesNetwork(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
         slangpy_pipeline = AddressesTrainingPipeline(slangpy_device, slangpy_network)
-
-        for i, layer in enumerate(torch_network.layers):
-            slangpy_network.copy_weights(i, layer)
+        slangpy_network.copy_from_pytorch(torch_network)
+        # for i, layer in enumerate(torch_network.layers):
+        #     slangpy_network.copy_weights(i, layer)
     else:
         slangpy_network = SeparateBuffersNetwork(slangpy_device, hidden=hidden, hidden_layers=hidden_layers, levels=levels, input=1, output=1)
         slangpy_pipeline = SeparateBuffersTrainingPipeline(slangpy_device, slangpy_network)

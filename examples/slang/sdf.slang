@@ -77,120 +77,37 @@ public extension TriangleMesh : ISignedDistanceField
     }
 }
 
-// Intersections with ray marching
-public interface IRayMarchIntersection
-{
-    public static This rayMarch<Object>(Object object, Ray ray, int maxIters, float stepSize, float tMin, float tMax)
-        where Object : ISignedDistanceField;
-}
-
-// Intersections with sphere tracing
-public interface ISphereTraceIntersection
-{
-    public static This sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
-        where Object : ISignedDistanceField;
-}
-
-// Essential intersections
-public struct PositionIntersection : ISphereTraceIntersection
-{
-    public float t;
-    public float3 p;
-
-    public static This sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
-        where Object : ISignedDistanceField
-    {
-        float t = tMin;
-        for (int i = 0; i < maxIters; i++)
-        {
-            float3 p = ray.origin + t * ray.direction;
-            float d = object.sdf(p);
-            if (abs(d) < 0.001)
-                return This(t, p);
-            if (t > tMax)
-                return This(0.0, float3(0.0));
-            t += d;
-        }
-
-        return This(0.0, float3(0.0));
-    }
-}
-
-public struct PositionNormalIntersection : ISphereTraceIntersection, IRayMarchIntersection
+// Sphere tracing
+public struct SphereTraceResult
 {
     public float t;
     public float3 p;
     public float3 n;
+    public int steps;
+}
 
-    public static This sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
-        where Object : ISignedDistanceField
+public SphereTraceResult sphereTrace<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
+    where Object : ISignedDistanceField
+{
+    float t = tMin;
+    for (int i = 0; i < maxIters; i++)
     {
-        float t = tMin;
-        for (int i = 0; i < maxIters; i++)
+        float3 p = ray.origin + t * ray.direction;
+        float d = object.sdf(p);
+        if (abs(d) < 0.001)
         {
-            float3 p = ray.origin + t * ray.direction;
-            float d = object.sdf(p);
-            if (abs(d) < 0.001)
-            {
-                // Calculate gradient
-                // TODO: use autodiff for this
-
-                float3 px_plus_eps = p + float3(1e-4, 0.0, 0.0);
-                float3 px_minus_eps = p - float3(1e-4, 0.0, 0.0);
-                float3 py_plus_eps = p + float3(0.0, 1e-4, 0.0);
-                float3 py_minus_eps = p - float3(0.0, 1e-4, 0.0);
-                float3 pz_plus_eps = p + float3(0.0, 0.0, 1e-4);
-                float3 pz_minus_eps = p - float3(0.0, 0.0, 1e-4);
-
-                float dx = object.sdf(px_plus_eps) - object.sdf(px_minus_eps);
-                float dy = object.sdf(py_plus_eps) - object.sdf(py_minus_eps);
-                float dz = object.sdf(pz_plus_eps) - object.sdf(pz_minus_eps);
-
-                float3 n = normalize(float3(dx, dy, dz));
-                
-                return This(t, p, n);
-            }
-            if (t > tMax)
-                return This(0.0, float3(0.0), float3(0.0));
-            t += d;
+            // Finite difference normal
+            float3 n = float3(0.0, 0.0, 0.0);
+            n.x = object.sdf(float3(p.x + 1e-4, p.y, p.z)) - object.sdf(float3(p.x - 1e-4, p.y, p.z));
+            n.y = object.sdf(float3(p.x, p.y + 1e-4, p.z)) - object.sdf(float3(p.x, p.y - 1e-4, p.z));
+            n.z = object.sdf(float3(p.x, p.y, p.z + 1e-4)) - object.sdf(float3(p.x, p.y, p.z - 1e-4));
+            return { t, p, normalize(n), i };
         }
+        if (t > tMax)
+            return { -1.0, float3(0.0), float3(0.0), i };
 
-        return This(0.0, float3(0.0), float3(0.0));
+        t += d;
     }
 
-    public static This rayMarch<Object>(Object object, Ray ray, int maxIters, float stepSize, float tMin, float tMax)
-        where Object : ISignedDistanceField
-    {
-        float t = tMin;
-        for (int i = 0; i < maxIters; i++)
-        {
-            float3 p = ray.origin + t * ray.direction;
-            float d = object.sdf(p);
-            if (abs(d) < 0.001)
-            {
-                // Calculate gradient
-                // TODO: use autodiff for this
-
-                float3 px_plus_eps = p + float3(1e-4, 0.0, 0.0);
-                float3 px_minus_eps = p - float3(1e-4, 0.0, 0.0);
-                float3 py_plus_eps = p + float3(0.0, 1e-4, 0.0);
-                float3 py_minus_eps = p - float3(0.0, 1e-4, 0.0);
-                float3 pz_plus_eps = p + float3(0.0, 0.0, 1e-4);
-                float3 pz_minus_eps = p - float3(0.0, 0.0, 1e-4);
-
-                float dx = object.sdf(px_plus_eps) - object.sdf(px_minus_eps);
-                float dy = object.sdf(py_plus_eps) - object.sdf(py_minus_eps);
-                float dz = object.sdf(pz_plus_eps) - object.sdf(pz_minus_eps);
-
-                float3 n = normalize(float3(dx, dy, dz));
-
-                return This(t, p, n);
-            }
-            if (t > tMax)
-                return This(0.0, float3(0.0), float3(0.0));
-            t += stepSize;
-        }
-
-        return This(0.0, float3(0.0), float3(0.0));
-    }
+    return { -1.0, float3(0.0), float3(0.0), maxIters };
 }
