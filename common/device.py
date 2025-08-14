@@ -12,8 +12,11 @@ def create_device(
     device_types = [spy.DeviceType.metal, spy.DeviceType.vulkan]
     
     # Always include neural path
-    neural_path = ROOT / "neural"
-    include_paths = [neural_path]
+    include_paths = [
+        ROOT / "neural",
+        ROOT / "examples" / "slang",
+        ROOT / "examples" / "networks" / "slang",
+    ]
     
     if additional_include_paths:
         include_paths.extend(additional_include_paths)

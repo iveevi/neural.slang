@@ -1,14 +1,12 @@
 from __future__ import annotations
 import slangpy as spy
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from time import perf_counter
-import pytorch_volumetric as pv
-from scipy.ndimage import gaussian_filter
 from common import *
 from ..networks.addresses import Network, TrainingPipeline
-from ..render_util import *
+from ..util import *
+
+
+HERE = ROOT / "examples" / "sdf"
+
 
 class RenderingPipeline:
     @staticmethod
@@ -21,7 +19,7 @@ class RenderingPipeline:
         return device.load_module_from_source("specialization", source)
 
     def __init__(self, device: spy.Device, network: Network):
-        SOURCE = ROOT / "examples" / "slang" / "neural_sdf.slang"
+        SOURCE = HERE / "slang" / "main.slang"
         
         self.device = device
         self.module = device.load_module(str(SOURCE))

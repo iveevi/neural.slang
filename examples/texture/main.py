@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import seaborn as sns
 from scipy.ndimage import gaussian_filter
@@ -6,46 +7,12 @@ import slangpy as spy
 from PIL import Image
 from common import *
 from ..util import *
-from ..networks.addresses import Network, TrainingPipeline
 
 
 HERE = ROOT / "examples" / "texture"
 
 
-class RenderingPipeline:
-    @staticmethod
-    def load_specialization_module(device: spy.Device, network: Network):
-        source = f"""
-        export static const int Hidden = {network.hidden};
-        export static const int HiddenLayers = {network.hidden_layers};
-        export static const int Levels = {network.levels};
-        """
-        return device.load_module_from_source("specialization", source)
-
-    def __init__(self, device: spy.Device, network: Network):
-        SOURCE = HERE / "slang" / "main.slang"
-        
-        self.device = device
-        self.module = device.load_module(str(SOURCE))
-        self.specialization_module = self.load_specialization_module(device, network)
-
-        self.render_neural_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_neural")
-
-    def render_neural(self, network: Network, target_texture: spy.Texture):
-        command_encoder = self.device.create_command_encoder()
-
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.render_neural_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.network = network.dict()
-            cursor.targetTexture = target_texture
-            cursor.targetResolution = (target_texture.width, target_texture.height)
-            cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
-
-        self.device.submit_command_buffer(command_encoder.finish())
-
-
-def main():
+def main(Network, TrainingPipeline, RenderingPipeline):
     image = Image.open(ROOT / "resources" / "yellowstone.png")
     image = np.array(image)
     image = image[..., :3].astype(np.float32) / 255.0
@@ -133,7 +100,18 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--network", type=str, choices=[
+        "addresses",
+    ], default="addresses")
+    args = parser.parse_args()
+
     sns.set_theme()
     sns.set_palette("pastel")
 
-    main()
+    match args.network:
+        case "addresses":
+            from .addresses import Network, TrainingPipeline, RenderingPipeline
+            main(Network, TrainingPipeline, RenderingPipeline)
+        case _:
+            raise ValueError(f"Invalid network: {args.network}")

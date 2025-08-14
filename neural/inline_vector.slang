@@ -287,8 +287,18 @@ public struct InlineVector<T, int N> : IVector<T, N>
         );
     }
 
-    // Convert from vectors
-    public static This from(vector<T, N> v)
+    // Conversion to and from vectors
+    public vector<T, N> toVector()
+    {
+        vector<T, N> result;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result[i] = this.data[i];
+
+        return result;
+    }
+
+    public static This fromVector(vector<T, N> v)
     {
         This result = This();
         [ForceUnroll]

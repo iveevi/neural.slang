@@ -6,6 +6,9 @@ from .pytorch import PyTorchNetwork
 from common import *
 
 
+HERE = ROOT / "examples" / "networks" / "slang"
+
+
 # TODO: base class for all networks
 class Network:
     def __init__(self, device: spy.Device, hidden: int, hidden_layers: int, levels: int, input: int, output: int):
@@ -120,9 +123,9 @@ class TrainingPipeline:
 
     def __init__(self, device: spy.Device, network: Network):
         if network.levels == 0:
-            SOURCE = ROOT / "examples" / "slang" / "kernels" / "addresses_identity_kernels.slang"
+            SOURCE = HERE / "kernels" / "addresses_identity_kernels.slang"
         else:
-            SOURCE = ROOT / "examples" / "slang" / "kernels" / "addresses_frequency_kernels.slang"
+            SOURCE = HERE / "kernels" / "addresses_frequency_kernels.slang"
 
         self.device = device
 

@@ -34,7 +34,7 @@ public extension Network : ISignedDistanceField
 {
     public float sdf(float3 p)
     {
-        return forward(Network.InputVec.from(p))[0];
+        return forward(Network.InputVec.fromVector(p))[0];
     }
 }
 

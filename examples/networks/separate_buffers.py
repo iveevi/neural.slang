@@ -4,6 +4,9 @@ import torch.nn as nn
 from common import *
 
 
+HERE = ROOT / "examples" / "networks"
+
+
 class Layer:
     def __init__(self, device: spy.Device, in_size: int, out_size: int):
         self.device = device
@@ -113,7 +116,7 @@ class TrainingPipeline:
         return device.load_module_from_source("specialization", source)
     
     def __init__(self, device: spy.Device, network: Network):
-        SOURCE = ROOT / "examples" / "slang" / "network_with_separate_buffers_kernels.slang"
+        SOURCE = HERE / "slang" / "network_with_separate_buffers_kernels.slang"
         self.device = device
         self.module = device.load_module(str(SOURCE))
         self.specialization_module = self.compile_specialization_module(

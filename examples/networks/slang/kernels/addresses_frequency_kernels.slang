@@ -5,8 +5,10 @@ extern static const int In;
 extern static const int Out;
 extern static const int Hidden;
 extern static const int HiddenLayers;
+extern static const int Levels;
 
-typealias Encoder = IdentityEncoder<float, In>;
+typealias Encoder = FrequencyEncoder<float, In, Levels>;
+
 typealias Network = NetworkWithAddresses<
     In,
     Out,
