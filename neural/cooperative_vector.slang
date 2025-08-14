@@ -219,6 +219,26 @@ public struct CoopVector<T, int N> : IVector<T, N>
         dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.sign(), doutput).add(dthis.d));
     }
 
+    [BackwardDerivative(expBwd)]
+    public This exp()
+    {
+        This result = this;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = exp(result.data[i]);
+
+        return result;
+    }
+
+    static void expBwd(
+
+        inout DifferentialPair<This> dthis,
+        Differential doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, dmul(dthis.p.exp(), doutput).add(dthis.d));
+    }
+
     public This sign()
     {
         This result = this;

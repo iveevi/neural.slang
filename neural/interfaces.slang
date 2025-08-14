@@ -77,6 +77,7 @@ public interface IVector<T, int N> : IDifferentiable
     This sin();
     This cos();
     This abs();
+    This exp();
     T sum();
 
     // Vector conversions and constructors

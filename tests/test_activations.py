@@ -233,3 +233,75 @@ def test_sine_derivative(device, make_kernel, random_seed, in_size):
     expected = input_torch.grad.numpy()
     
     assert_close(output, expected)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_exp(device, make_kernel, random_seed, in_size):
+    np.random.seed(random_seed)
+    batch_size = 16
+    # Use smaller range for exp to avoid overflow
+    data = np.random.rand(batch_size, in_size).astype(np.float32) * 2 - 1
+
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("exp", link_modules=[specialization_module])
+    
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "input": input_buffer,
+                "output": output_buffer,
+            }
+        },
+    )
+    
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
+    expected = np.exp(data)
+    
+    assert_close(output, expected)
+
+
+@pytest.mark.parametrize("random_seed", [0])
+@pytest.mark.parametrize("in_size", [16, 32, 64, 128])
+def test_exp_derivative(device, make_kernel, random_seed, in_size):
+    np.random.seed(random_seed)
+    batch_size = 16
+    # Use smaller range for exp to avoid overflow
+    data = np.random.rand(batch_size, in_size).astype(np.float32) * 2 - 1
+
+    specialization_module = create_specialization_module(device, in_size)
+    kernel = make_kernel("exp_derivative", link_modules=[specialization_module])
+    
+    input_buffer = create_buffer_32b(device, data, in_size)
+    output_buffer = create_batched_buffer_32b(device, batch_size, in_size)
+    
+    kernel.dispatch(
+        thread_count=(batch_size, 1, 1),
+        vars={
+            "globals": {
+                "input": input_buffer,
+                "output": output_buffer,
+            }
+        },
+    )
+    
+    output = output_buffer.to_numpy().view(np.float32).reshape(batch_size, in_size)
+    
+    # Use PyTorch backward to compute Exp derivative
+    input_torch = torch.tensor(data, requires_grad=True)
+    
+    # Apply Exp activation
+    exp_output = torch.exp(input_torch)
+    
+    # For vector output, we need to provide gradient tensor for backward()
+    # Use ones to get the derivative of each element w.r.t. its input
+    gradient_tensor = torch.ones_like(exp_output)
+    exp_output.backward(gradient_tensor)
+    
+    expected = input_torch.grad.numpy()
+    
+    assert_close(output, expected)

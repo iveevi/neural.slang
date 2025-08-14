@@ -97,3 +97,20 @@ public struct Sine<T> : IActivation<T>
         return input.sin();
     }
 }
+
+/////////
+// Exp //
+/////////
+
+public struct Exp<T> : IActivation<T>
+    where T : __BuiltinFloatingPointType
+    where T : IArithmeticAtomicable
+{
+    [NoDiffThis, BackwardDifferentiable]
+    public Vector eval<int N, Vector>(Vector input)
+        where Vector : IVector<T, N>
+        where Vector.Differential == Vector
+    {
+        return input.exp();
+    }
+}
