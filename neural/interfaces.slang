@@ -34,9 +34,8 @@ public interface IBindlessStorage<T> : IDifferentiablePtrType
 }
 
 // Vector interface
-public interface IVector<T, int N> : /* IArithmetic, */ IDifferentiable
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+public interface IVector<T, int N> : IDifferentiable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     __init();
     __init(T value);
@@ -83,8 +82,7 @@ public interface IVector<T, int N> : /* IArithmetic, */ IDifferentiable
 
 // Activation function interface
 public interface IActivation<T>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     [NoDiffThis, BackwardDifferentiable]
     public Vector eval<int N, Vector>(Vector input)
@@ -94,8 +92,7 @@ public interface IActivation<T>
 
 // Loss function interface
 public interface ILoss<T>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     [NoDiffThis, BackwardDifferentiable]
     public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
@@ -114,8 +111,7 @@ public interface IOptimizer<T>
 
 // Encoder interface
 public interface IEncoder<T, int In, int Out>
-    where T : __BuiltinFloatingPointType
-            where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, In>
@@ -124,8 +120,7 @@ public interface IEncoder<T, int In, int Out>
 
 // Learnable encoder interface
 public interface ILearnableEncoder<T, int In, int Out, Storage>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
 {
     public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)

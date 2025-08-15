@@ -10,6 +10,11 @@ public struct Box
 {
     public float3 low;
     public float3 high;
+
+    public static Box fromCenterAndSize(float3 center, float3 size)
+    {
+        return Box(center - size * 0.5, center + size * 0.5);
+    }
 }
 
 public struct Triangle

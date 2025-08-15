@@ -9,3 +9,4 @@ __include losses;
 __include optimizers;
 __include layers;
 __include encoders;
+__include vector_ops;

@@ -6,11 +6,12 @@ def create_buffer_32b(
     device: spy.Device,
     data: np.ndarray,
     elements_per_struct: int = 1,
+    usage: spy.BufferUsage = spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
 ) -> spy.Buffer:
     return device.create_buffer(
         size=data.nbytes,
         struct_size=elements_per_struct * 4,
-        usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
+        usage=usage,
         data=data,
     )
 

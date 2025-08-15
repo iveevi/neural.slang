@@ -37,9 +37,29 @@ public struct NetworkWithAddresses<
     RWStructuredBuffer<int> layerAddresses;
     uint parameterCount;
 
+    public typealias Parameters = StructuredBufferStorage<float>;
+    public typealias Configuration = RWStructuredBuffer<int>;
+
+    public Parameters parameterStorage()
+    {
+        return StructuredBufferStorage<float>(parameters);
+    }
+
+    public DifferentialPtrPair<StorageType> parameterStorageDiff()
+    {
+        let parameterStorage = StructuredBufferStorage<float>(parameters);
+        let gradientStorage = StructuredBufferStorage<float>(gradients);
+        return DifferentialPtrPair<StorageType>(parameterStorage, gradientStorage);
+    }
+
+    public Configuration addresses()
+    {
+        return layerAddresses;
+    }
+
     // Evaluation and loss methods
     [BackwardDifferentiable]
-    static OutputVec eval(
+    public static OutputVec eval(
         StructuredBufferStorage<float> parameterStorage,
         no_diff RWStructuredBuffer<int> layerAddresses,
         no_diff InputVec input)
@@ -62,6 +82,7 @@ public struct NetworkWithAddresses<
         return output;
     }
 
+    // TODO: this should also be generated from slangpy
     [BackwardDifferentiable]
     static float loss(
         StructuredBufferStorage<float> parameterStorage,
@@ -75,20 +96,17 @@ public struct NetworkWithAddresses<
     }
 
     // Kernel methods
+    // TODO: becomes batch forward
     public OutputVec forward(InputVec input)
     {
-        let parameterStorage = StructuredBufferStorage<float>(parameters);
-        return eval(parameterStorage, layerAddresses, input);
+        return eval(parameterStorage(), layerAddresses, input);
     }
 
+    // TODO: becomes batch backward
     public void backward(InputVec input, OutputVec expected, float boost)
     {
-        let parameterStorage = StructuredBufferStorage<float>(parameters);
-        let gradientStorage = StructuredBufferStorage<float>(gradients);
-        let diffStorage = DifferentialPtrPair<StorageType>(parameterStorage, gradientStorage);
-
         bwd_diff(loss)(
-            diffStorage,
+            parameterStorageDiff(),
             layerAddresses,
             input,
             expected,
@@ -96,6 +114,7 @@ public struct NetworkWithAddresses<
         );
     }
 
+    // TODO: optimize kernel can be generated from slangpy
     public void optimize(uint tid)
     {
         if (tid < parameterCount)

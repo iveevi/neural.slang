@@ -58,3 +58,33 @@ class Camera:
             horizontal=horizontal,
             vertical=vertical,
         )
+    
+    def view_matrix(self) -> np.ndarray:
+        right, up, forward = self.transform.axes()
+        position = self.transform.position
+        
+        view = np.eye(4, dtype=np.float32)
+        
+        view[0, 0:3] = right
+        view[1, 0:3] = up
+        view[2, 0:3] = -forward
+        
+        view[0, 3] = -np.dot(right, position)
+        view[1, 3] = -np.dot(up, position)
+        view[2, 3] = np.dot(forward, position)
+        
+        return view
+    
+    def perspective_matrix(self) -> np.ndarray:
+        fov_rad = np.radians(self.fov)
+        f = 1.0 / np.tan(fov_rad / 2.0)
+        
+        proj = np.zeros((4, 4), dtype=np.float32)
+        
+        proj[0, 0] = f / self.aspect_ratio
+        proj[1, 1] = f
+        proj[2, 2] = (self.far + self.near) / (self.near - self.far)
+        proj[2, 3] = (2.0 * self.far * self.near) / (self.near - self.far)
+        proj[3, 2] = -1.0
+        
+        return proj

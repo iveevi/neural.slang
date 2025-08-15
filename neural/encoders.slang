@@ -8,6 +8,7 @@ public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int In = N;
     public static const int Out = N;
     
     [BackwardDifferentiable]
@@ -49,6 +50,7 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
     where T : __BuiltinFloatingPointType
     where T : IArithmeticAtomicable
 {
+    public static const int In = Dim;
     public static const int Out = 2 * Levels * Dim;
 
     [BackwardDerivative(evalBwd)]

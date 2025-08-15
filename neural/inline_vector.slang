@@ -288,6 +288,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
     }
 
     // Conversion to and from vectors
+    [BackwardDerivative(toVectorBwd)]
     public vector<T, N> toVector()
     {
         vector<T, N> result;
@@ -298,6 +299,15 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return result;
     }
 
+    static void toVectorBwd(
+        inout DifferentialPair<This> dthis,
+        vector<T, N> doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, fromVector(doutput));
+    }
+
+    [BackwardDerivative(fromVectorBwd)]
     public static This fromVector(vector<T, N> v)
     {
         This result = This();
@@ -306,6 +316,14 @@ public struct InlineVector<T, int N> : IVector<T, N>
             result.data[i] = v[i];
 
         return result;
+    }
+
+    static void fromVectorBwd(
+        inout DifferentialPair<vector<T, N>> dv,
+        This doutput
+    )
+    {
+        dv = DifferentialPair<vector<T, N>>(dv.p, doutput.toVector());
     }
 }
 
