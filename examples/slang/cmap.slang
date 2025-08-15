@@ -339,3 +339,48 @@ public struct RdBu : IColorMap
         }
     }
 }
+
+public struct HSV : IColorMap
+{
+    float vmin = 0.0;
+    float vmax = 1.0;
+
+    public __init(float vmin, float vmax)
+    {
+        this.vmin = vmin;
+        this.vmax = vmax;
+    }
+
+    public static float3 hsv_to_rgb(float3 hsv)
+    {
+        float h = hsv.x;
+        float s = hsv.y;
+        float v = hsv.z;
+        
+        float c = v * s;
+        float x = c * (1.0 - abs(fmod(h * 6.0, 2.0) - 1.0));
+        float m = v - c;
+        
+        float3 rgb;
+        if (h < 1.0/6.0)
+            rgb = float3(c, x, 0);
+        else if (h < 2.0/6.0)
+            rgb = float3(x, c, 0);
+        else if (h < 3.0/6.0)
+            rgb = float3(0, c, x);
+        else if (h < 4.0/6.0)
+            rgb = float3(0, x, c);
+        else if (h < 5.0/6.0)
+            rgb = float3(x, 0, c);
+        else
+            rgb = float3(c, 0, x);
+            
+        return rgb + float3(m, m, m);
+    }
+
+    public float3 eval(float t)
+    {
+        t = clamp_normalize(t, vmin, vmax);
+        return hsv_to_rgb(float3(t, 1.0, 1.0));
+    }
+}

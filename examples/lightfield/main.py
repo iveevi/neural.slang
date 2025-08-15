@@ -1,6 +1,7 @@
 from ..networks.addresses import Network, TrainingPipeline
 from ..util import *
 from common import *
+from dataclasses import dataclass
 from typing import Any
 import numpy as np
 import slangpy as spy
@@ -13,6 +14,20 @@ HERE = ROOT / "examples" / "lightfield"
 
 # TODO: automatically generate slang source for training pipeline based on
 # main.slang (reflection on the network paramter block)
+
+
+@dataclass
+class Cylinder:
+    center: spy.float3
+    radius: float
+    height: float
+
+    def dict(self):
+        return {
+            "center": self.center,
+            "radius": self.radius,
+            "height": self.height,
+        }
 
 
 class RenderingPipeline:
@@ -40,7 +55,62 @@ class RenderingPipeline:
         
         # Backward pass pipeline
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
+
+        # Upscaled rendering pipeline
+        upscaled_program = device.link_program(
+            modules=[self.module, self.specialization_module],
+            entry_points=[
+                self.module.entry_point("upscaled_vertex"),
+                self.module.entry_point("upscaled_fragment"),
+            ],
+        )
+
+        input_layout = device.create_input_layout(
+            input_elements=[
+                {
+                    "semantic_name": "POSITION",
+                    "semantic_index": 0,
+                    "format": spy.Format.rg32_float,
+                    "offset": 0,
+                    "buffer_slot_index": 0,
+                }
+            ],
+            vertex_streams=[
+                { "stride": 4 * 2 }
+            ]
+        )
+
+        self.upscaled_pipeline = device.create_render_pipeline(
+            program=upscaled_program,
+            input_layout=input_layout,
+            primitive_topology=spy.PrimitiveTopology.triangle_list,
+            targets=[
+                { "format": spy.Format.bgra8_unorm_srgb },
+            ],
+        )
+
+        quad_vertices = np.array([
+            [-1.0, -1.0],
+            [1.0, -1.0],
+            [-1.0, 1.0],
+            [1.0, 1.0],
+        ], dtype=np.float32)
+
+        quad_triangles = np.array([
+            [0, 1, 2],
+            [1, 3, 2],
+        ], dtype=np.uint32)
         
+        self.quad_vertices_buffer = device.create_buffer(
+            data=quad_vertices,
+            usage=spy.BufferUsage.vertex_buffer,
+        )
+        
+        self.quad_triangles_buffer = device.create_buffer(
+            data=quad_triangles,
+            usage=spy.BufferUsage.index_buffer,
+        )
+
         # Reference pipeline
         reference_program = device.link_program(
             modules=[self.module, self.specialization_module],
@@ -96,7 +166,7 @@ class RenderingPipeline:
             }
         )
 
-    def render_neural(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_neural(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture, cylinder: Cylinder):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
@@ -106,11 +176,12 @@ class RenderingPipeline:
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
+            cursor.cylinder = cylinder.dict()
             cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
             
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def backward(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture, pixel_samples: spy.Buffer, loss_buffer: spy.Buffer):
+    def backward(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture, cylinder: Cylinder, loss_buffer: spy.Buffer):
         command_encoder = self.device.create_command_encoder()
         
         with command_encoder.begin_compute_pass() as cmd:
@@ -120,8 +191,8 @@ class RenderingPipeline:
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
-            cursor.pixelSamples = pixel_samples
             cursor.lossBuffer = loss_buffer
+            cursor.cylinder = cylinder.dict()
             cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
             
         self.device.submit_command_buffer(command_encoder.finish())
@@ -175,16 +246,58 @@ class RenderingPipeline:
             
         self.device.submit_command_buffer(command_encoder.finish())
 
+    def render_upscaled(self, target: tuple[spy.Texture, spy.TextureView], reference_texture: spy.Texture, reference_sampler: spy.Sampler):
+        command_encoder = self.device.create_command_encoder()
+
+        render_pass_args: Any = {
+            "color_attachments": [
+                {
+                    "view": target[1],
+                    "clear_value": [0.0, 0.0, 0.0, 1.0],
+                    "load_op": spy.LoadOp.clear,
+                    "store_op": spy.StoreOp.store,
+                }
+            ],
+        }
+
+        with command_encoder.begin_render_pass(render_pass_args) as cmd:
+            shader_object = cmd.bind_pipeline(self.upscaled_pipeline)
+
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.referenceTexture = reference_texture
+            cursor.referenceSampler = reference_sampler
+            cursor.upscaledResolution = (target[0].width, target[0].height)
+
+            state = spy.RenderState()
+            state.vertex_buffers = [ self.quad_vertices_buffer ]
+            state.index_buffer = self.quad_triangles_buffer
+            state.index_format = spy.IndexFormat.uint32
+            state.viewports = [
+                spy.Viewport.from_size(target[0].width, target[0].height)
+            ]
+            state.scissor_rects = [
+                spy.ScissorRect.from_size(target[0].width, target[0].height)
+            ]
+            cmd.set_render_state(state)
+
+            params = spy.DrawArguments()
+            params.instance_count = 1
+            params.vertex_count = 6  # 2 triangles * 3 vertices each
+
+            cmd.draw_indexed(params)
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
 
 def main():
     device = create_device()
     
     network = Network(
         device,
-        hidden=16,
-        hidden_layers=2,
-        levels=8,
-        input=6,
+        hidden=64,
+        hidden_layers=3,
+        levels=0,
+        input=4,
         output=3,
     )
     
@@ -202,22 +315,41 @@ def main():
     mesh_bounds = geometry.bounds
     mesh_size = np.linalg.norm(mesh_bounds[1] - mesh_bounds[0])
     
+    # Calculate bounding cylinder (vertical orientation - Y axis is height)
+    vertices = geometry.vertices.astype(np.float32)
+    relative_vertices = vertices - mesh_center
+    cylinder_radius = np.max(np.sqrt(relative_vertices[:, 0]**2 + relative_vertices[:, 2]**2))
+    cylinder_height = mesh_bounds[1][1] - mesh_bounds[0][1]
+    
     print(f"Mesh center: {mesh_center}")
     print(f"Mesh bounds: {mesh_bounds}")
     print(f"Mesh size: {mesh_size}")
+    print(f"Bounding cylinder - center: {mesh_center}, radius: {cylinder_radius:.3f}, height: {cylinder_height:.3f}")
     
     mesh = TriangleMesh.new(device, geometry)
     
-    app = App(device)
+    show_reference = False
+    
+    def keyboard_hook(event: spy.KeyboardEvent):
+        if event.type == spy.KeyboardEventType.key_press:
+            if event.key == spy.KeyCode.tab:
+                nonlocal show_reference
+                show_reference = not show_reference
+    
+    app = App(device, keyboard_hook=keyboard_hook)
     
     texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.rgba8_unorm,
-        width=app.width,
-        height=app.height,
-        usage=spy.TextureUsage.shader_resource | spy.TextureUsage.unordered_access,
+        width=128,
+        height=128,
+        usage=spy.TextureUsage.shader_resource
+            | spy.TextureUsage.unordered_access
+            | spy.TextureUsage.render_target,
         data=None,
     )
+
+    # TODO: multiple lower resolution target textures for backward pass
     
     depth_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
@@ -259,49 +391,62 @@ def main():
     camera_distance = mesh_size * 1.5  # Distance based on mesh size
     camera.transform.position = mesh_center + np.array([0.0, 0.0, camera_distance])
     
-    SAMPLE_COUNT = 1 << 10
-    pixel_samples = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 2), dtype=np.uint32), 2)
-    loss_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT,), dtype=np.float32))
+    loss_buffer = create_buffer_32b(device, np.zeros((app.width * app.height,), dtype=np.float32))
     
-    history = []
+    history: list[float] = []
+
+    # TODO: toggle with 'tab' key
+
+    texture_view = texture.create_view()
+    frame_views = dict()
+
+    bound = Cylinder(mesh_center, cylinder_radius, cylinder_height)
     
     def loop(frame: Frame):
+        frame_view = None
+        if frame.image not in frame_views:
+            frame_view = frame.image.create_view()
+            frame_views[id(frame.image)] = frame_view
+        else:
+            frame_view = frame_views[id(frame.image)]
+
         time = frame.count[0] * 0.01
         
         # Orbit around the calculated mesh centroid
         orbit_radius = mesh_size * 1.2  # Orbit radius based on mesh size
         camera.transform.position = mesh_center + orbit_radius * np.array((np.cos(time), 0.2, np.sin(time)))
         camera.transform.look_at(mesh_center)
+
+        # TODO: take samples from random points in the orbit
         
         # Reference rendering
         rendering_pipeline.render_reference(
             camera,
             mesh,
-            (texture, texture.create_view()),
+            (texture, texture_view),
             depth_texture.create_view(),
             diffuse_texture,
             sampler,
         )
         
         # Backward pass
-        ix = np.random.randint(0, app.width, (SAMPLE_COUNT)).astype(np.uint32)
-        iy = np.random.randint(0, app.height, (SAMPLE_COUNT)).astype(np.uint32)
-        samples = np.stack((ix, iy), axis=1)
-        pixel_samples.copy_from_numpy(samples)
+        rendering_pipeline.backward(network, camera.rayframe(), texture, bound, loss_buffer)
         
-        rendering_pipeline.backward(network, camera.rayframe(), texture, pixel_samples, loss_buffer)
-        
-        loss = loss_buffer.to_numpy().view(np.float32).mean()
+        loss_data = loss_buffer.to_numpy().view(np.float32)
+        loss = loss_data.mean()
         history.append(loss)
         
         # Neural rendering
-        rendering_pipeline.render_neural(network, camera.rayframe(), texture)
+        if not show_reference:
+            rendering_pipeline.render_neural(network, camera.rayframe(), texture, bound)
         
         # Optimize
         training_pipeline.optimize(network)
         
-        frame.cmd.blit(frame.image, texture)
-        frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
+        # frame.cmd.blit(frame.image, texture)
+        # frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
+
+        rendering_pipeline.render_upscaled((frame.image, frame_view), texture, sampler)
     
     app.run(loop)
     
@@ -310,12 +455,13 @@ def main():
     import seaborn as sns
     from scipy.ndimage import gaussian_filter
     import matplotlib.pyplot as plt
-    history = np.array(history)
-    sns.lineplot(history, alpha=0.5, color="green")
-    sns.lineplot(gaussian_filter(history, 5), linewidth=2.5, label="Slang", color="green")
+    import os
+    os.makedirs("plots", exist_ok=True)
+    history_array = np.array(history)
+    sns.lineplot(history_array, alpha=0.5, color="green")
+    sns.lineplot(gaussian_filter(history_array, 5), linewidth=2.5, color="green")
     plt.yscale("log")
-    plt.legend()
-    plt.show()
+    plt.savefig("plots/history.png")
 
 if __name__ == "__main__":
     main()

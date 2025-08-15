@@ -1,6 +1,26 @@
 import camera;
 import neural;
 import network_with_addresses;
+import shapes;
+import cmap;
+
+// Upscaled rendering with quad rendering
+uniform Texture2D referenceTexture;
+uniform SamplerState referenceSampler;
+uniform uint2 upscaledResolution;
+
+[shader("vertex")]
+float4 upscaled_vertex(float2 position : POSITION) : SV_Position
+{
+    return float4(position, 0.0, 1.0);
+}
+
+[shader("fragment")]
+float4 upscaled_fragment(float4 position : SV_Position) : SV_Target
+{
+    let uv = position.xy / upscaledResolution;
+    return referenceTexture.Sample(referenceSampler, uv);
+}
 
 // Rendering the reference
 struct VertexResult
@@ -52,8 +72,8 @@ extern static const int Hidden;
 extern static const int HiddenLayers;
 extern static const int Levels;
 
-typealias Encoder = FrequencyEncoder<float, 6, Levels>;
-// typealias Encoder = IdentityEncoder<float, 6>;
+// typealias Encoder = FrequencyEncoder<float, 3, Levels>;
+typealias Encoder = IdentityEncoder<float, 4>;
 
 // TODO: IMLP<float, Encoder.Out, 3>
 typealias Network = NetworkWithAddresses<
@@ -66,6 +86,7 @@ typealias Network = NetworkWithAddresses<
 uniform RayFrame rayFrame;
 uniform RWTexture2D targetTexture;
 uniform uint2 targetResolution;
+uniform Cylinder cylinder;
 
 ParameterBlock<Network> network;
 
@@ -73,18 +94,20 @@ ParameterBlock<Network> network;
 float3 render(
     Network.Parameters parameters,
     Network.Configuration configuration,
-    no_diff Ray ray
+    no_diff float3 c
 )
 {
-    let p = InlineVector<float, 3>.fromVector(ray.origin);
-    let d = InlineVector<float, 3>.fromVector(ray.direction);
-    let v = concat<
-        Network.InputVec,
-        InlineVector<float, 3>,
-        InlineVector<float, 3>,
-        float, 3, 3
-    >(p, d);
-    return Network.eval(parameters, configuration, v).toVector();
+    let cc = float4(
+        c.x,
+        sin(c.y),
+        cos(c.y),
+        c.z
+    );
+    return Network.eval(
+        parameters,
+        configuration,
+        Network.InputVec.fromVector(cc)
+    ).toVector();
 }
 
 [shader("compute")]
@@ -92,24 +115,36 @@ float3 render(
 void render_neural(uint3 tid : SV_DispatchThreadID)
 {
     float2 uv = (tid.xy + 0.5) / targetResolution;
+    
     let ray = rayFrame.rayAt(uv);
-    let color = render(network.parameterStorage(), network.addresses(), ray);
+    let intx = cylinder.intersection(ray);
+
+    var color = float3(0.0, 0.0, 0.0);
+    if (let x = intx)
+    {
+        let cylindricalCoords = cylinder.toCylindrical(x);
+        color = render(network.parameterStorage(), network.addresses(), cylindricalCoords);
+        // let ntheta = (cylindricalCoords.y + float.getPi()) / (2.0 * float.getPi());
+        // let hsv = HSV(0.0, 1.0);
+        // color = hsv.eval(cylindricalCoords.z);
+    }
+
     targetTexture[tid.xy] = float4(color, 1.0);
 }
 
 // Backward pass
-uniform RWStructuredBuffer<uint2> pixelSamples;
+// TODO: multiple cameras at once...
 uniform RWStructuredBuffer<float> lossBuffer;
 
 [BackwardDifferentiable]
 float loss(
     Network.Parameters parameters,
     Network.Configuration configuration,
-    no_diff Ray ray,
+    no_diff float3 cylindricalCoords,
     no_diff float3 expected
 )
 {
-    let color = render(parameters, configuration, ray);
+    let color = render(parameters, configuration, cylindricalCoords);
     let mse = MeanSquaredError<float>();
     return mse.eval(
         Network.OutputVec.fromVector(color),
@@ -121,26 +156,31 @@ float loss(
 [numthreads(32, 1, 1)]
 void backward(uint3 tid : SV_DispatchThreadID)
 {
-    let pixel = pixelSamples[tid.x];
-    let uv = float2(pixel) / targetResolution;
-    let ray = rayFrame.rayAt(uv);
+    let uv = float2(tid.xy + 0.5) / targetResolution;
 
-    let expected = targetTexture[pixel].rgb;
+    let ray = rayFrame.rayAt(uv);
+    let intx = cylinder.intersection(ray);
+
+    if (!intx.hasValue)
+        return;
+
+    let cylindricalCoords = cylinder.toCylindrical(intx.value);
+    let expected = targetTexture[tid.xy].rgb;
 
     bwd_diff(loss)(
         network.parameterStorageDiff(),
         network.addresses(),
-        ray,
+        cylindricalCoords,
         expected,
         1.0
     );
+
+    let index = tid.y * targetResolution.x + tid.x;
     
-    lossBuffer[tid.x] = loss(
+    lossBuffer[index] = loss(
         network.parameterStorage(),
         network.addresses(),
-        ray,
+        cylindricalCoords,
         expected
     );
 }
-
-// TODO: separate MLP and encoder

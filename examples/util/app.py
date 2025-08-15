@@ -1,4 +1,5 @@
 import slangpy as spy
+from time import perf_counter
 from typing import Callable
 from dataclasses import dataclass
 
@@ -28,11 +29,20 @@ class Frame:
 
 
 class App:
-    def __init__(self, device: spy.Device, width: int = 512, height: int = 512):
+    def __init__(
+        self,
+        device: spy.Device,
+        width: int = 1024,
+        height: int = 1024,
+        keyboard_hook: Callable[[spy.KeyboardEvent], None] = lambda _: None,
+        mouse_hook: Callable[[spy.MouseEvent], None] = lambda _: None,
+    ):
         self.device = device
         self.width = width
         self.height = height
         self.count = [0]
+        self.keyboard_hook = keyboard_hook
+        self.mouse_hook = mouse_hook
 
         self.window = spy.Window(width=width, height=height)
         self.surface = self.device.create_surface(self.window)
@@ -42,6 +52,10 @@ class App:
 
         self.window.on_keyboard_event = self.keyboard_handler
         self.window.on_mouse_event = self.mouse_handler
+
+        self.info_window = spy.ui.Window(self.context.screen, "Info", size=spy.float2(200, 100))
+        self.time_text = spy.ui.Text(self.info_window)
+        self.last_time = perf_counter()
 
     def alive(self) -> bool:
         return not self.window.should_close()
@@ -64,12 +78,18 @@ class App:
     def run(self, loop: Callable[[Frame], None]):
         while self.alive():
             with self.frame() as frame:
+                time = perf_counter() - self.last_time
+                ms = time * 1000
+                self.time_text.text = f"Frame time: {ms:.2f}ms"
+                self.last_time = perf_counter()
                 loop(frame)
 
     def keyboard_handler(self, event: spy.KeyboardEvent):
+        self.keyboard_hook(event)
         if event.type == spy.KeyboardEventType.key_press:
             if event.key == spy.KeyCode.escape:
                 self.window.close()
 
     def mouse_handler(self, event: spy.MouseEvent):
+        self.mouse_hook(event)
         self.context.handle_mouse_event(event)

@@ -1,6 +1,7 @@
 *.ini
+*.slang-module
+*.spirv
 *.trace
 .venv/
 __pycache__/
-*.slang-module
-*.spirv
+plots/
