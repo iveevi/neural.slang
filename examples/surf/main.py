@@ -9,7 +9,7 @@ import trimesh
 from PIL import Image
 
 
-HERE = ROOT / "examples" / "lightfield"
+HERE = ROOT / "examples" / "surf"
 
 
 # TODO: automatically generate slang source for training pipeline based on
@@ -198,9 +198,9 @@ def main():
     network = Network(
         device,
         hidden=32,
-        hidden_layers=2,
+        hidden_layers=4,
         levels=0,
-        input=4,
+        input=7,
         output=3,
     )
     

@@ -110,6 +110,40 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
     }
 }
 
+//////////////////////
+// One-blob encoder //
+//////////////////////
+
+// Gaussian kernel
+public struct OneBlobEncoder<T, int N, int K> : IEncoder<T, N, N * K>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+{
+    public static const int In = N;
+    public static const int Out = N * K;
+
+    [BackwardDifferentiable]
+    public OutputVector eval<InputVector, OutputVector>(InputVector input)
+        where InputVector : IVector<T, N>
+        where OutputVector : IVector<T, N * K>
+    {
+        OutputVector output;
+
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+        {
+            let s = input[i];
+            [ForceUnroll]
+            for (int j = 0; j < K; j++)
+            {
+                let x = T(j) / T(K - 1);
+                let k = exp(-(s - x) * (s - x) / (T(K) * T(K)));
+                output[i * K + j] = k;
+            }
+        }
+
+        return output;
+    }
+}
 ////////////////
 // Dense grid //
 ////////////////

@@ -5,6 +5,7 @@ import random;
 import sdf;
 import shapes;
 
+import mlp;
 import neural;
 import network_with_addresses;
 
@@ -18,6 +19,8 @@ extern static const int Hidden;
 extern static const int HiddenLayers;
 extern static const int Levels;
 extern struct ColorMap : IColorMap = Plasma;
+
+typealias MLP = AddressBasedMLP<3, 1, 32, 2, ReLU<float>, ReLU<float>>;
 
 typealias Encoder = IdentityEncoder<float, 3>;
 

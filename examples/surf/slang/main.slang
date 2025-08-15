@@ -55,7 +55,7 @@ extern static const int HiddenLayers;
 extern static const int Levels;
 
 // typealias Encoder = FrequencyEncoder<float, 3, Levels>;
-typealias Encoder = IdentityEncoder<float, 4>;
+typealias Encoder = IdentityEncoder<float, 7>;
 
 // TODO: IMLP<float, Encoder.Out, 3>
 typealias Network = NetworkWithAddresses<
@@ -77,25 +77,71 @@ float3 render(
     Network.Parameters parameters,
     Network.Configuration configuration,
     no_diff float3 c,
-    no_diff float3 d
+    no_diff float3 rayDirection
 )
 {
-    let normal = float3(
-        sin(c.x),
-        0.0,
-        cos(c.x)
+    // c contains cylindrical coordinates: (r, theta, y)
+    // where r is normalized radius, theta is angle, y is normalized height
+    
+    // Calculate surface normal at intersection point (outward pointing)
+    // For a cylinder, the normal is radial in the xz plane
+    let surfaceNormal = float3(cos(c.y), 0.0, sin(c.y));
+    
+    // Create normal frame at intersection point
+    // Normal: outward radial direction
+    // Tangent: tangent to cylinder surface (perpendicular to normal in xz plane)
+    // Bitangent: vertical direction (y-axis)
+    let normal = surfaceNormal;
+    let tangent = float3(-sin(c.y), 0.0, cos(c.y));  // perpendicular to normal in xz plane
+    let bitangent = float3(0.0, 1.0, 0.0);  // vertical direction
+    
+    // Invert the ray direction (from intersection point toward camera)
+    let invertedRay = -rayDirection;
+    
+    // Transform inverted ray to normal frame coordinates
+    let rayInNormalFrame = float3(
+        dot(invertedRay, tangent),
+        dot(invertedRay, bitangent), 
+        dot(invertedRay, normal)
     );
-    let dd = dot(normal, d);
-    let cc = float4(
-        dd,
+    
+    // Calculate spherical angles in normal frame
+    // Polar angle: angle from normal (z-axis in normal frame)
+    let cosTheta = rayInNormalFrame.z / length(rayInNormalFrame);
+    let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+    
+    // Azimuthal angle: angle around normal in tangent-bitangent plane
+    let cosPhi = rayInNormalFrame.x / length(rayInNormalFrame.xy);
+    let sinPhi = rayInNormalFrame.y / length(rayInNormalFrame.xy);
+    
+    // // Prepare 4-component input vector:
+    // // 1. sin(angular) component from cylindrical coordinates
+    // // 2. vertical component from cylindrical coordinates  
+    // // 3. sin(polar angle) of inverted ray in normal frame
+    // // 4. sin(azimuthal angle) of inverted ray in normal frame
+    // let cc = float4(
+    //     sin(c.y),    // sin(theta) from cylindrical coordinates
+    //     c.z,         // vertical component (normalized height)
+    //     sinTheta,    // sin(polar angle) of inverted ray
+    //     sinPhi       // sin(azimuthal angle) of inverted ray
+    // );
+
+    // return HSV(0.0, 1.0).eval(0.5 * cc.w + 0.5);
+
+    float[7] cc = float[7](
         sin(c.y),
         cos(c.y),
-        c.z
+        c.z,
+        sinTheta,
+        cosTheta,
+        sinPhi,
+        cosPhi,
     );
+    
     return Network.eval(
         parameters,
         configuration,
-        Network.InputVec.fromVector(cc)
+        Network.InputVec(cc)
     ).toVector();
 }
 
