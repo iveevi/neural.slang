@@ -3,7 +3,6 @@ import slangpy as spy
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from time import perf_counter
 import pytorch_volumetric as pv
 from scipy.ndimage import gaussian_filter
 from common import *
@@ -26,21 +25,29 @@ def main(Network, RenderingPipeline, TrainingPipeline):
     sample_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 3), dtype=np.float32), 3)
     sdf_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
 
-    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "suzanne.obj"))
+    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "spot.obj"))
     mesh_sdf = pv.MeshSDF(mesh_obj)
 
     def target_sdf(samples: np.ndarray) -> np.ndarray:
-        # return mesh_sdf(samples)[0].numpy()
-        return np.linalg.norm(samples, axis=1) - 1.0
+        return mesh_sdf(samples)[0].numpy()
+        # return np.linalg.norm(samples, axis=1) - 1.0
+        
+    render_heatmap = True
+    
+    def keyboard_hook(event: spy.KeyboardEvent):
+        if event.type == spy.KeyboardEventType.key_press:
+            if event.key == spy.KeyCode.tab:
+                nonlocal render_heatmap
+                render_heatmap = not render_heatmap
 
-    app = App(device)
+    app = App(device, keyboard_hook=keyboard_hook)
 
     # Define consistent dimensions
     texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.rgba8_unorm,
-        width=app.width,
-        height=app.height,
+        width=256,
+        height=256,
         usage=spy.TextureUsage.shader_resource | spy.TextureUsage.unordered_access,
         data=None,
     )
@@ -52,48 +59,38 @@ def main(Network, RenderingPipeline, TrainingPipeline):
     
     history = []
 
-    ui_window = spy.ui.Window(app.context.screen, 'Info')
-    loss_text = spy.ui.Text(ui_window)
-    time_text = spy.ui.Text(ui_window)
+    def loop(frame: Frame):
+        # TODO: mouse controlled orbital camera
+        time = frame.count[0] * 0.01
+        camera.transform.position = 5.0 * np.array((np.cos(time), 0.0, np.sin(time)))
+        camera.transform.look_at(np.array((0.0, 0.0, 0.0)))
+        
+        # Rendering
+        # TODO: render at a lower resolution than the window (render to texture, then interpolate texture)
+        if render_heatmap:
+            rendering_pipeline.render_heatmap(network, camera.rayframe(), texture)
+        else:
+            rendering_pipeline.render_normal(network, camera.rayframe(), texture)
 
-    last_time = perf_counter()
+        # Training
+        samples = (2 * np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) - 1)
+        sample_buffer.copy_from_numpy(samples)
 
-    while app.alive():
-        with app.frame() as frame:
-            # TODO: mouse controlled orbital camera
-            time = frame.count[0] * 0.01
-            camera.transform.position = 5.0 * np.array((np.cos(time), 0.0, np.sin(time)))
-            camera.transform.look_at(np.array((0.0, 0.0, 0.0)))
-            
-            # Rendering
-            # TODO: render at a lower resolution than the window (render to texture, then interpolate texture)
-            rendering_pipeline.render_neural(network, camera.rayframe(), texture)
-            # TODO: heatmap of the number of steps in sphere tracing
+        training_pipeline.forward(network, sample_buffer, sdf_buffer)
+        sdf_neural = sdf_buffer.to_numpy().view(np.float32)
 
-            # Training
-            samples = (2 * np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) - 1)
-            sample_buffer.copy_from_numpy(samples)
+        sdf = target_sdf(samples)
+        sdf_buffer.copy_from_numpy(sdf)
 
-            training_pipeline.forward(network, sample_buffer, sdf_buffer)
-            sdf_neural = sdf_buffer.to_numpy().view(np.float32)
+        loss = np.abs(sdf_neural - sdf).mean()
+        history.append(loss)
 
-            sdf = target_sdf(samples)
-            sdf_buffer.copy_from_numpy(sdf)
+        training_pipeline.backward(network, sample_buffer, sdf_buffer)
+        training_pipeline.optimize(network)
+        
+        frame.blit(texture)
 
-            # loss = np.square(sdf_neural - sdf).mean()
-            loss = np.abs(sdf_neural - sdf).mean()
-            history.append(loss)
-
-            training_pipeline.backward(network, sample_buffer, sdf_buffer)
-            training_pipeline.optimize(network)
-
-            # UI
-            frame.cmd.blit(frame.image, texture)
-            frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
-
-            loss_text.text = f"loss: {history[-1]:.4f}"
-            time_text.text = f"time: {perf_counter() - last_time:.2f}s"
-            last_time = perf_counter()
+    app.run(loop)
 
     # Plot loss
     history = np.array(history)

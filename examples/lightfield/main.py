@@ -56,61 +56,6 @@ class RenderingPipeline:
         # Backward pass pipeline
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
 
-        # Upscaled rendering pipeline
-        upscaled_program = device.link_program(
-            modules=[self.module, self.specialization_module],
-            entry_points=[
-                self.module.entry_point("upscaled_vertex"),
-                self.module.entry_point("upscaled_fragment"),
-            ],
-        )
-
-        input_layout = device.create_input_layout(
-            input_elements=[
-                {
-                    "semantic_name": "POSITION",
-                    "semantic_index": 0,
-                    "format": spy.Format.rg32_float,
-                    "offset": 0,
-                    "buffer_slot_index": 0,
-                }
-            ],
-            vertex_streams=[
-                { "stride": 4 * 2 }
-            ]
-        )
-
-        self.upscaled_pipeline = device.create_render_pipeline(
-            program=upscaled_program,
-            input_layout=input_layout,
-            primitive_topology=spy.PrimitiveTopology.triangle_list,
-            targets=[
-                { "format": spy.Format.bgra8_unorm_srgb },
-            ],
-        )
-
-        quad_vertices = np.array([
-            [-1.0, -1.0],
-            [1.0, -1.0],
-            [-1.0, 1.0],
-            [1.0, 1.0],
-        ], dtype=np.float32)
-
-        quad_triangles = np.array([
-            [0, 1, 2],
-            [1, 3, 2],
-        ], dtype=np.uint32)
-        
-        self.quad_vertices_buffer = device.create_buffer(
-            data=quad_vertices,
-            usage=spy.BufferUsage.vertex_buffer,
-        )
-        
-        self.quad_triangles_buffer = device.create_buffer(
-            data=quad_triangles,
-            usage=spy.BufferUsage.index_buffer,
-        )
-
         # Reference pipeline
         reference_program = device.link_program(
             modules=[self.module, self.specialization_module],
@@ -246,56 +191,14 @@ class RenderingPipeline:
             
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def render_upscaled(self, target: tuple[spy.Texture, spy.TextureView], reference_texture: spy.Texture, reference_sampler: spy.Sampler):
-        command_encoder = self.device.create_command_encoder()
-
-        render_pass_args: Any = {
-            "color_attachments": [
-                {
-                    "view": target[1],
-                    "clear_value": [0.0, 0.0, 0.0, 1.0],
-                    "load_op": spy.LoadOp.clear,
-                    "store_op": spy.StoreOp.store,
-                }
-            ],
-        }
-
-        with command_encoder.begin_render_pass(render_pass_args) as cmd:
-            shader_object = cmd.bind_pipeline(self.upscaled_pipeline)
-
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.referenceTexture = reference_texture
-            cursor.referenceSampler = reference_sampler
-            cursor.upscaledResolution = (target[0].width, target[0].height)
-
-            state = spy.RenderState()
-            state.vertex_buffers = [ self.quad_vertices_buffer ]
-            state.index_buffer = self.quad_triangles_buffer
-            state.index_format = spy.IndexFormat.uint32
-            state.viewports = [
-                spy.Viewport.from_size(target[0].width, target[0].height)
-            ]
-            state.scissor_rects = [
-                spy.ScissorRect.from_size(target[0].width, target[0].height)
-            ]
-            cmd.set_render_state(state)
-
-            params = spy.DrawArguments()
-            params.instance_count = 1
-            params.vertex_count = 6  # 2 triangles * 3 vertices each
-
-            cmd.draw_indexed(params)
-
-        self.device.submit_command_buffer(command_encoder.finish())
-
 
 def main():
     device = create_device()
     
     network = Network(
         device,
-        hidden=64,
-        hidden_layers=3,
+        hidden=32,
+        hidden_layers=2,
         levels=0,
         input=4,
         output=3,
@@ -341,8 +244,8 @@ def main():
     texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.rgba8_unorm,
-        width=128,
-        height=128,
+        width=256,
+        height=256,
         usage=spy.TextureUsage.shader_resource
             | spy.TextureUsage.unordered_access
             | spy.TextureUsage.render_target,
@@ -443,10 +346,8 @@ def main():
         # Optimize
         training_pipeline.optimize(network)
         
-        # frame.cmd.blit(frame.image, texture)
-        # frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
-
-        rendering_pipeline.render_upscaled((frame.image, frame_view), texture, sampler)
+        # Display
+        frame.blit(texture)
     
     app.run(loop)
     
@@ -456,12 +357,12 @@ def main():
     from scipy.ndimage import gaussian_filter
     import matplotlib.pyplot as plt
     import os
-    os.makedirs("plots", exist_ok=True)
     history_array = np.array(history)
     sns.lineplot(history_array, alpha=0.5, color="green")
     sns.lineplot(gaussian_filter(history_array, 5), linewidth=2.5, color="green")
     plt.yscale("log")
     plt.savefig("plots/history.png")
+    plt.show()
 
 if __name__ == "__main__":
     main()

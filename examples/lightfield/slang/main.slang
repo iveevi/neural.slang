@@ -4,24 +4,6 @@ import network_with_addresses;
 import shapes;
 import cmap;
 
-// Upscaled rendering with quad rendering
-uniform Texture2D referenceTexture;
-uniform SamplerState referenceSampler;
-uniform uint2 upscaledResolution;
-
-[shader("vertex")]
-float4 upscaled_vertex(float2 position : POSITION) : SV_Position
-{
-    return float4(position, 0.0, 1.0);
-}
-
-[shader("fragment")]
-float4 upscaled_fragment(float4 position : SV_Position) : SV_Target
-{
-    let uv = position.xy / upscaledResolution;
-    return referenceTexture.Sample(referenceSampler, uv);
-}
-
 // Rendering the reference
 struct VertexResult
 {
@@ -94,11 +76,18 @@ ParameterBlock<Network> network;
 float3 render(
     Network.Parameters parameters,
     Network.Configuration configuration,
-    no_diff float3 c
+    no_diff float3 c,
+    no_diff float3 d
 )
 {
+    let normal = float3(
+        sin(c.x),
+        0.0,
+        cos(c.x)
+    );
+    let dd = dot(normal, d);
     let cc = float4(
-        c.x,
+        dd,
         sin(c.y),
         cos(c.y),
         c.z
@@ -123,7 +112,7 @@ void render_neural(uint3 tid : SV_DispatchThreadID)
     if (let x = intx)
     {
         let cylindricalCoords = cylinder.toCylindrical(x);
-        color = render(network.parameterStorage(), network.addresses(), cylindricalCoords);
+        color = render(network.parameterStorage(), network.addresses(), cylindricalCoords, ray.direction);
         // let ntheta = (cylindricalCoords.y + float.getPi()) / (2.0 * float.getPi());
         // let hsv = HSV(0.0, 1.0);
         // color = hsv.eval(cylindricalCoords.z);
@@ -141,14 +130,15 @@ float loss(
     Network.Parameters parameters,
     Network.Configuration configuration,
     no_diff float3 cylindricalCoords,
+    no_diff float3 direction,
     no_diff float3 expected
 )
 {
-    let color = render(parameters, configuration, cylindricalCoords);
+    let color = render(parameters, configuration, cylindricalCoords, direction);
     let mse = MeanSquaredError<float>();
     return mse.eval(
         Network.OutputVec.fromVector(color),
-        Network.OutputVec.fromVector(expected)
+        Network.OutputVec.fromVector(expected),
     );
 }
 
@@ -171,6 +161,7 @@ void backward(uint3 tid : SV_DispatchThreadID)
         network.parameterStorageDiff(),
         network.addresses(),
         cylindricalCoords,
+        ray.direction,
         expected,
         1.0
     );
@@ -181,6 +172,7 @@ void backward(uint3 tid : SV_DispatchThreadID)
         network.parameterStorage(),
         network.addresses(),
         cylindricalCoords,
+        ray.direction,
         expected
     );
 }

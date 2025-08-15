@@ -55,8 +55,8 @@ def main(Network, TrainingPipeline, RenderingPipeline):
     target_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.rgba8_unorm,
-        width=app.width,
-        height=app.height,
+        width=256,
+        height=256,
         usage=spy.TextureUsage.shader_resource | spy.TextureUsage.unordered_access,
         data=None,
     )
@@ -70,8 +70,8 @@ def main(Network, TrainingPipeline, RenderingPipeline):
     def loop(frame: Frame):
         rendering_pipeline.render_neural(network, target_texture)
 
-        frame.cmd.blit(frame.image, target_texture)
-        frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
+        # frame.cmd.blit(frame.image, target_texture)
+        # frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
 
         samples = np.random.rand(SAMPLE_COUNT, 2).astype(np.float32)
         colors = sample(samples).astype(np.float32)
@@ -87,6 +87,8 @@ def main(Network, TrainingPipeline, RenderingPipeline):
 
         training_pipeline.backward(network, sample_buffer, color_buffer)
         training_pipeline.optimize(network)
+        
+        frame.blit(target_texture)
 
     app.run(loop)
 

@@ -2,6 +2,7 @@ import slangpy as spy
 from time import perf_counter
 from typing import Callable
 from dataclasses import dataclass
+from .blitter import Blitter
 
 
 @dataclass
@@ -15,6 +16,8 @@ class Frame:
     image: spy.Texture
     surface: spy.Surface
     window: spy.Window
+    blitter: Blitter
+    view: spy.TextureView
 
     def __enter__(self):
         self.window.process_events()
@@ -26,9 +29,12 @@ class Frame:
         self.device.submit_command_buffer(self.cmd.finish())
         self.surface.present()
         self.count[0] += 1
+        
+    def blit(self, source: spy.Texture):
+        self.blitter.blit((self.image, self.view), source)
 
 
-class App:
+class App(Blitter):
     def __init__(
         self,
         device: spy.Device,
@@ -37,6 +43,8 @@ class App:
         keyboard_hook: Callable[[spy.KeyboardEvent], None] = lambda _: None,
         mouse_hook: Callable[[spy.MouseEvent], None] = lambda _: None,
     ):
+        super().__init__(device)
+        
         self.device = device
         self.width = width
         self.height = height
@@ -56,6 +64,8 @@ class App:
         self.info_window = spy.ui.Window(self.context.screen, "Info", size=spy.float2(200, 100))
         self.time_text = spy.ui.Text(self.info_window)
         self.last_time = perf_counter()
+        
+        self.frame_views = dict()
 
     def alive(self) -> bool:
         return not self.window.should_close()
@@ -63,6 +73,11 @@ class App:
     def frame(self) -> Frame:
         cmd = self.device.create_command_encoder()
         image = self.surface.acquire_next_image()
+        if id(image) not in self.frame_views:
+            self.frame_views[id(image)] = image.create_view()
+        else:
+            self.frame_views[id(image)] = self.frame_views[id(image)]
+        
         return Frame(
             width=self.width,
             height=self.height,
@@ -72,7 +87,9 @@ class App:
             context=self.context,
             image=image,
             surface=self.surface,
-            window=self.window
+            window=self.window,
+            blitter=self,
+            view=self.frame_views[id(image)],
         )
 
     def run(self, loop: Callable[[Frame], None]):

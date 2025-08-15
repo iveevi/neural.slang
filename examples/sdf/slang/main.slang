@@ -40,7 +40,7 @@ public extension Network : ISignedDistanceField
 
 [shader("compute")]
 [numthreads(32, 1, 1)]
-void render_neural(uint3 tid : SV_DispatchThreadID)
+void render_heatmap(uint3 tid : SV_DispatchThreadID)
 {
     float2 uv = (tid.xy + 0.5) / targetResolution;
     uv.y = 1 - uv.y;
@@ -48,8 +48,20 @@ void render_neural(uint3 tid : SV_DispatchThreadID)
     let ray = rayFrame.rayAt(uv);
 
     let intx = sphereTrace((Network) network, ray, 100, 1e-3, 10.0);
-    // TODO: uniform to toggle between color map and normal
     float3 color = ColorMap(0, 100).eval(intx.steps);
-    // float3 color = (intx.t > 0.0) ? intx.n * 0.5 + 0.5 : float3(0, 0, 0);
+    targetTexture.Store(tid.xy, float4(color, 1));
+}
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void render_normal(uint3 tid : SV_DispatchThreadID)
+{
+    float2 uv = (tid.xy + 0.5) / targetResolution;
+    uv.y = 1 - uv.y;
+
+    let ray = rayFrame.rayAt(uv);
+
+    let intx = sphereTrace((Network) network, ray, 100, 1e-3, 10.0);
+    float3 color = (intx.t > 0.0) ? intx.n * 0.5 + 0.5 : float3(0, 0, 0);
     targetTexture.Store(tid.xy, float4(color, 1));
 }
