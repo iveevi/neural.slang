@@ -181,9 +181,9 @@ def main():
     
     network = Network(
         device,
-        hidden=32,
+        hidden=16,
         hidden_layers=2,
-        levels=0,
+        levels=8,
         input=6,
         output=3,
     )

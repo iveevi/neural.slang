@@ -17,6 +17,13 @@ public struct Box
     }
 }
 
+public struct Cylinder
+{
+    public float3 center;
+    public float radius;
+    public float height;
+}
+
 public struct Triangle
 {
     public float3 v0;

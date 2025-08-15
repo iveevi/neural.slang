@@ -52,9 +52,10 @@ extern static const int Hidden;
 extern static const int HiddenLayers;
 extern static const int Levels;
 
-// typealias Encoder = FrequencyEncoder<float, 3, Levels>;
-typealias Encoder = IdentityEncoder<float, 6>;
+typealias Encoder = FrequencyEncoder<float, 6, Levels>;
+// typealias Encoder = IdentityEncoder<float, 6>;
 
+// TODO: IMLP<float, Encoder.Out, 3>
 typealias Network = NetworkWithAddresses<
     Encoder.In, 3, Encoder.Out,
     Hidden, HiddenLayers,
@@ -143,15 +144,3 @@ void backward(uint3 tid : SV_DispatchThreadID)
 }
 
 // TODO: separate MLP and encoder
-public interface IMLP<T, int In, int Out>
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
-{
-    public associatedtype Parameters;
-    public associatedtype Configuration;
-
-    public associatedtype InputVec : IVector<T, In>;
-    public associatedtype OutputVec : IVector<T, Out>;
-
-    [BackwardDifferentiable]
-    public static OutputVec eval(Parameters parameters, Configuration configuration, InputVec input);
-}
