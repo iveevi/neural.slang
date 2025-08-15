@@ -16,10 +16,11 @@ public struct AddressBasedMLP<
 
     public typealias Parameters = StructuredBufferStorage<float>;
     public typealias Configuration = RWStructuredBuffer<int>;
+    public typealias Dual = DifferentialPtrPair<Parameters>;
 
-    RWStructuredBuffer<float> parameterBuffer;
-    RWStructuredBuffer<float> gradientBuffer;
-    RWStructuredBuffer<int> layerAddressBuffer;
+    RWStructuredBuffer<float>.Handle parameterBuffer;
+    RWStructuredBuffer<float>.Handle gradientBuffer;
+    RWStructuredBuffer<int>.Handle layerAddressBuffer;
     uint parameterCount;
 
     public property Parameters parameters {
@@ -34,11 +35,9 @@ public struct AddressBasedMLP<
         }
     }
 
-    public property DifferentialPtrPair<Parameters> parametersDual {
+    public property Dual dual {
         get {
-            let parameterStorage = StructuredBufferStorage<float>(parameterBuffer);
-            let gradientStorage = StructuredBufferStorage<float>(gradientBuffer);
-            return DifferentialPtrPair<Parameters>(parameterStorage, gradientStorage);
+            return DifferentialPtrPair<Parameters>(StructuredBufferStorage<float>(parameterBuffer), StructuredBufferStorage<float>(gradientBuffer));
         }
     }
 

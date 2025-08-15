@@ -12,9 +12,13 @@ class RenderingPipeline:
     @staticmethod
     def load_specialization_module(device: spy.Device, network: Network):
         source = f"""
+        import neural;
+        import mlp;
+        
         export static const int Hidden = {network.hidden};
         export static const int HiddenLayers = {network.hidden_layers};
         export static const int Levels = {network.levels};
+        export struct MLP : IMLP<float, 3, 1> = AddressBasedMLP<3, 1, 32, 2, ReLU<float>, ReLU<float>>;
         """
         return device.load_module_from_source("specialization", source)
 
@@ -27,7 +31,13 @@ class RenderingPipeline:
 
         self.render_heatmap_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_heatmap")
         self.render_normal_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_normal")
-
+        
+        layout = self.module.layout
+        mlp_type = layout.find_type_by_name("AddressBasedMLP<3, 1, 32, 2, ReLU<float>, ReLU<float>>")
+        print("mlp_type:", mlp_type)
+        self.mlp_layout = layout.get_type_layout(mlp_type)
+        print("mlp_layout:", self.mlp_layout)
+        
     def render_heatmap(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 

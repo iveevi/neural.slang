@@ -10,12 +10,13 @@ public interface IMLP<T, int In, int Out>
     
     public associatedtype Parameters : IDifferentiablePtrType;
     public associatedtype Configuration;
+    public associatedtype Dual;
 
     public property Parameters parameters { get; }
     public property Configuration configuration { get; }
-    public property DifferentialPtrPair<Parameters> parametersDual { get; }
+    public property Dual dual { get; }
 
-    [BackwardDifferentiable]
+    // [BackwardDifferentiable]
     public static OutputVec eval(Parameters parameters, Configuration configuration, InputVec input);
 }
 

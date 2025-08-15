@@ -250,6 +250,49 @@ public struct CoopVector<T, int N> : IVector<T, N>
     }
 }
 
+// Vector conversions and constructors
+public extension<T, int N> CoopVector<T, N> : IVector<T, N>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+{
+    [BackwardDerivative(toVectorBwd)]
+    public vector<T, N> toVector()
+    {
+        vector<T, N> result;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result[i] = this.data[i];
+
+        return result;
+    }
+
+    static void toVectorBwd(
+        inout DifferentialPair<This> dthis,
+        vector<T, N> doutput
+    )
+    {
+        dthis = DifferentialPair<This>(dthis.p, fromVector(doutput));
+    }
+
+    [BackwardDerivative(fromVectorBwd)]
+    public static This fromVector(vector<T, N> v)
+    {
+        This result = This();
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result.data[i] = v[i];
+
+        return result;
+    }
+
+    static void fromVectorBwd(
+        inout DifferentialPair<vector<T, N>> dv,
+        This doutput
+    )
+    {
+        dv = DifferentialPair<vector<T, N>>(dv.p, doutput.toVector());
+    }
+}
+
 // Ordinary storage
 public extension<T, int N> CoopVector<T, N> : IVector<T, N>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable

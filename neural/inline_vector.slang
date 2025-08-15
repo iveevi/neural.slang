@@ -286,7 +286,11 @@ public struct InlineVector<T, int N> : IVector<T, N>
             dadd(dthis.d, This(__slang_noop_cast<T>(doutput)))
         );
     }
+}
 
+public extension<T, int N> InlineVector<T, N> : IVector<T, N>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+{
     // Conversion to and from vectors
     [BackwardDerivative(toVectorBwd)]
     public vector<T, N> toVector()

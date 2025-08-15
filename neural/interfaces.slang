@@ -78,6 +78,10 @@ public interface IVector<T, int N> : IDifferentiable
     This cos();
     This abs();
     T sum();
+
+    // Vector conversions and constructors
+    vector<T, N> toVector();
+    static This fromVector(vector<T, N> v);
 }
 
 // Activation function interface

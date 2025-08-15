@@ -1,4 +1,3 @@
-import argparse
 import slangpy as spy
 import numpy as np
 import seaborn as sns
@@ -10,8 +9,11 @@ from ..networks.addresses import Network, TrainingPipeline
 from ..util import *
 from .addresses import RenderingPipeline
 
-def main(Network, RenderingPipeline, TrainingPipeline):
+def main():
     device = create_device()
+    
+    if not device.has_feature(spy.Feature.bindless):
+        raise ValueError("Bindless is not supported on this device")
 
     hidden = 32
     hidden_layers = 2
@@ -19,6 +21,18 @@ def main(Network, RenderingPipeline, TrainingPipeline):
     network = Network(device, hidden=hidden, hidden_layers=hidden_layers, levels=0, input=3, output=1)
     rendering_pipeline = RenderingPipeline(device, network)
     training_pipeline = TrainingPipeline(device, network)
+    
+    # MLP buffer
+    mlp_buffer = device.create_buffer(
+        size=rendering_pipeline.mlp_layout.stride,
+        usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
+    )
+    
+    mlp_buffer_cursor = spy.BufferCursor(rendering_pipeline.mlp_layout, mlp_buffer)
+    # mlp_buffer_cursor[0].parameterBuffer = network.parameters.descriptor_handle_rw
+    # mlp_buffer_cursor[0].gradientBuffer = network.gradients.descriptor_handle_rw
+    mlp_buffer_cursor[0].layerAddressBuffer = network.layer_addresses.descriptor_handle_ro
+    mlp_buffer_cursor[0].parameterCount = network.parameter_count
 
     # Allocate loss buffer
     SAMPLE_COUNT = 1 << 10
@@ -101,18 +115,7 @@ def main(Network, RenderingPipeline, TrainingPipeline):
     plt.show()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--network", type=str, choices=[
-        "addresses",
-    ], default="addresses")
-    args = parser.parse_args()
-
     sns.set_theme()
     sns.set_palette("pastel")
 
-    match args.network:
-        case "addresses":
-            from .addresses import Network, RenderingPipeline, TrainingPipeline
-            main(Network, RenderingPipeline, TrainingPipeline)
-        case _:
-            raise ValueError(f"Invalid network: {args.network}")
+    main()

@@ -88,6 +88,15 @@ class Network:
             "layerAddresses": self.layer_addresses,
             "parameterCount": self.parameter_count,
         }
+        
+    def dict_bindless(self):
+        return {
+            "parameters": self.parameters.descriptor_handle_rw,
+            "gradients": self.gradients.descriptor_handle_rw,
+            "states": self.optimizer_states.descriptor_handle_rw,
+            "layerAddresses": self.layer_addresses.descriptor_handle_rw,
+            "parameterCount": self.parameter_count,
+        }
 
     def copy_from_pytorch(self, pytorch: PyTorchNetwork):
         # Check that the pytorch network has the same structure as the slang network

@@ -20,7 +20,10 @@ extern static const int HiddenLayers;
 extern static const int Levels;
 extern struct ColorMap : IColorMap = Plasma;
 
-typealias MLP = AddressBasedMLP<3, 1, 32, 2, ReLU<float>, ReLU<float>>;
+// TODO: encoder as well...
+extern struct MLP : IMLP<float, 3, 1>;
+
+RWStructuredBuffer<MLP> mlps;
 
 typealias Encoder = IdentityEncoder<float, 3>;
 
@@ -41,6 +44,14 @@ public extension Network : ISignedDistanceField
     }
 }
 
+public extension MLP : ISignedDistanceField
+{
+    public float sdf(float3 p)
+    {
+        return eval(parameters, configuration, InputVec.fromVector(p))[0];
+    }
+}
+
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void render_heatmap(uint3 tid : SV_DispatchThreadID)
@@ -50,7 +61,9 @@ void render_heatmap(uint3 tid : SV_DispatchThreadID)
 
     let ray = rayFrame.rayAt(uv);
 
-    let intx = sphereTrace((Network) network, ray, 100, 1e-3, 10.0);
+    let mlp = mlps[0];
+
+    let intx = sphereTrace(mlp, ray, 100, 1e-3, 10.0);
     float3 color = ColorMap(0, 100).eval(intx.steps);
     targetTexture.Store(tid.xy, float4(color, 1));
 }
