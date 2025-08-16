@@ -17,8 +17,8 @@ public struct AddressBasedMLP<
     public typealias Parameters = StructuredBufferStorage<float>;
     public typealias Dual = DifferentialPtrPair<Parameters>;
 
-    RWStructuredBuffer<float>.Handle parameterBuffer;
-    RWStructuredBuffer<float>.Handle gradientBuffer;
+    RWStructuredBuffer<float> parameterBuffer;
+    RWStructuredBuffer<float> gradientBuffer;
 
     public property Parameters parameters {
         get {
@@ -34,11 +34,12 @@ public struct AddressBasedMLP<
         }
     }
 
-    // public void optimize<Optimizer>(Optimizer optimizer, inout Optimizer.State state, uint tid)
-    //     where Optimizer : IOptimizer<float>
-    // {
-    //     optimizer.step(state, parameterBuffer[tid], gradientBuffer[tid]);
-    // }
+    public void update<Optimizer>(Optimizer optimizer, inout Optimizer.State state, uint tid)
+        where Optimizer : IOptimizer<float>
+    {
+        optimizer.step(state, parameterBuffer[tid], gradientBuffer[tid]);
+        gradientBuffer[tid] = 0.0;
+    }
 
     [BackwardDifferentiable]
     public static OutputVec eval(Parameters parameterStorage, InputVec input)

@@ -9,6 +9,8 @@ ROOT = pathlib.Path(__file__).parent.parent.absolute()
 def create_device(
     additional_include_paths: Optional[List[pathlib.Path]] = None,
 ) -> spy.Device:
+    spy.Logger.get().level = spy.LogLevel.debug
+    
     device_types = [spy.DeviceType.metal, spy.DeviceType.vulkan]
     
     # Always include neural path

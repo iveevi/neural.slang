@@ -3,18 +3,45 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pytorch_volumetric as pv
+from dataclasses import dataclass
 from scipy.ndimage import gaussian_filter
 from common import *
 from ..networks.addresses import Network, TrainingPipeline
 from ..util import *
-from .addresses import RenderingPipeline
+from .addresses import *
+
+
+@dataclass
+class AddressBasedMLP(MLP):
+    parameter_buffer: spy.Buffer
+    gradient_buffer: spy.Buffer
+
+    def dict(self):
+        return {
+            "parameterBuffer": self.parameter_buffer,
+            "gradientBuffer": self.gradient_buffer,
+        }
+
+
+@dataclass
+class Adam(Optimizer):
+    alpha: float = 1e-3
+    beta1: float = 0.9
+    beta2: float = 0.999
+    epsilon: float = 1e-8
+
+    def dict(self):
+        return {
+            "alpha": self.alpha,
+            "beta1": self.beta1,
+            "beta2": self.beta2,
+            "epsilon": self.epsilon,
+        }
+
 
 def main():
     device = create_device()
     
-    if not device.has_feature(spy.Feature.bindless):
-        raise ValueError("Bindless is not supported on this device")
-
     hidden = 32
     hidden_layers = 2
     
@@ -22,20 +49,10 @@ def main():
     rendering_pipeline = RenderingPipeline(device, network)
     training_pipeline = TrainingPipeline(device, network)
 
-    mlp = {
-        "parameterBuffer": network.parameters.descriptor_handle_rw,
-        "gradientBuffer": network.gradients.descriptor_handle_rw,
-    }
-    
-    # # MLP buffer
-    # mlps = device.create_buffer(
-    #     size=rendering_pipeline.mlp_layout.stride,
-    #     usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
-    # )
-    
-    # mlps_cursor = spy.BufferCursor(rendering_pipeline.mlp_layout, mlps)
-    # mlps_cursor[0].parameterBuffer = network.parameters.descriptor_handle_rw
-    # mlps_cursor[0].gradientBuffer = network.gradients.descriptor_handle_rw
+    mlp = AddressBasedMLP(
+        parameter_buffer=network.parameters,
+        gradient_buffer=network.gradients,
+    )
 
     # Allocate loss buffer
     SAMPLE_COUNT = 1 << 10
@@ -104,7 +121,8 @@ def main():
 
         # training_pipeline.backward(network, sample_buffer, sdf_buffer)
         rendering_pipeline.backward(mlp, sample_buffer, sdf_buffer, SAMPLE_COUNT)
-        training_pipeline.optimize(network)
+        # training_pipeline.optimize(network)
+        rendering_pipeline.optimize(mlp, Adam(), network.optimizer_states, network.parameter_count)
         
         frame.blit(texture)
 

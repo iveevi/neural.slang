@@ -11,6 +11,7 @@ import network_with_addresses;
 
 // Neural network and extensions
 typealias MLP = AddressBasedMLP<3, 1, 32, 2, ReLU<float>, Identity<float>>;
+typealias Optimizer = Adam<float>;
 
 public extension MLP : ISignedDistanceField
 {
@@ -79,4 +80,15 @@ void backward(uint3 tid : SV_DispatchThreadID)
         expectedBuffer[tid.x],
         boost
     );
+}
+
+// Optimization
+uniform Optimizer optimizer;
+uniform RWStructuredBuffer<Optimizer.State> optimizerStates;
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void optimize(uint3 tid : SV_DispatchThreadID)
+{
+    mlp.update(optimizer, optimizerStates[tid.x], tid.x);
 }
