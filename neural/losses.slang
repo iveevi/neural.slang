@@ -11,7 +11,6 @@ public struct MeanSquaredError<T> : ILoss<T>
     [NoDiffThis, BackwardDifferentiable]
     public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
         where Vector : IVector<T, N>
-        where Vector.Differential == Vector
     {
         let diff = predicted.sub(expected);
         let square = diff.mul(diff);
@@ -30,7 +29,6 @@ public struct MeanAbsoluteError<T> : ILoss<T>
     [NoDiffThis, BackwardDifferentiable]
     public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
         where Vector : IVector<T, N>
-        where Vector.Differential == Vector
     {
         let diff = predicted.sub(expected);
         let abs = diff.abs();

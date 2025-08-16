@@ -30,7 +30,8 @@ class Network:
         layers = [ linear_to_numpy(nn.Linear(s[0], s[1])).flatten() for s in self.layer_shapes ]
         sizes = [ layer.size for layer in layers ]
 
-        self.layer_addresses_host = np.cumsum([0, *sizes])[:-1].astype(np.int32)
+        self.layer_addresses_host = np.cumsum([0, *sizes])[:-1].astype(np.uint32)
+        print("layer_addresses_host:", self.layer_addresses_host)
 
         layers = np.ascontiguousarray(np.concatenate(layers, axis=0))
 
@@ -39,6 +40,7 @@ class Network:
         self.optimizer_states = create_buffer_32b(device, np.zeros_like(layers).repeat(3, axis=0), 3)
         self.layer_addresses = create_buffer_32b(device, self.layer_addresses_host)
         self.parameter_count = layers.size
+        print("parameter_count:", self.parameter_count)
 
     def input_vec(self, input: np.ndarray) -> spy.Buffer:
         assert input.ndim > 1

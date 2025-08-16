@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 import slangpy as spy
 from common import *
 from ..networks.addresses import Network, TrainingPipeline
@@ -8,6 +9,8 @@ from ..util import *
 HERE = ROOT / "examples" / "sdf"
 
 
+# TODO: move to main as a mlp agnostic pipeline
+# TODO: decorators for extracting each part of the pipeline -- reflection to get the global variables
 class RenderingPipeline:
     @staticmethod
     def load_specialization_module(device: spy.Device, network: Network):
@@ -18,7 +21,6 @@ class RenderingPipeline:
         export static const int Hidden = {network.hidden};
         export static const int HiddenLayers = {network.hidden_layers};
         export static const int Levels = {network.levels};
-        export struct MLP : IMLP<float, 3, 1> = AddressBasedMLP<3, 1, 32, 2, ReLU<float>, ReLU<float>>;
         """
         return device.load_module_from_source("specialization", source)
 
@@ -31,20 +33,18 @@ class RenderingPipeline:
 
         self.render_heatmap_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_heatmap")
         self.render_normal_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_normal")
+
+        self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
         
-        layout = self.module.layout
-        mlp_type = layout.find_type_by_name("AddressBasedMLP<3, 1, 32, 2, ReLU<float>, ReLU<float>>")
-        print("mlp_type:", mlp_type)
-        self.mlp_layout = layout.get_type_layout(mlp_type)
-        print("mlp_layout:", self.mlp_layout)
-        
-    def render_heatmap(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_heatmap(self, mlp: Any, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_heatmap_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.network = network.dict()
+            cursor.mlp = mlp
+            # cursor.network = network.dict()
+            # cursor.layerAddresses = network.layer_addresses
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
@@ -52,16 +52,32 @@ class RenderingPipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def render_normal(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_normal(self, mlp: Any, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_normal_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.network = network.dict()
+            cursor.mlp = mlp
+            # cursor.network = network.dict()
+            # cursor.layerAddresses = network.layer_addresses
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
             cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def backward(self, mlp: Any, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, sample_count: int):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.backward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp
+            cursor.inputBuffer = input_buffer
+            cursor.expectedBuffer = expected_buffer
+            cursor.boost = 1.0 / sample_count
+            cmd.dispatch(thread_count=(sample_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())

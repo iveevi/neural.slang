@@ -15,13 +15,10 @@ public struct AddressBasedMLP<
     public typealias OutputVec = InlineVector<float, Out>;
 
     public typealias Parameters = StructuredBufferStorage<float>;
-    public typealias Configuration = RWStructuredBuffer<int>;
     public typealias Dual = DifferentialPtrPair<Parameters>;
 
     RWStructuredBuffer<float>.Handle parameterBuffer;
     RWStructuredBuffer<float>.Handle gradientBuffer;
-    RWStructuredBuffer<int>.Handle layerAddressBuffer;
-    uint parameterCount;
 
     public property Parameters parameters {
         get {
@@ -29,23 +26,22 @@ public struct AddressBasedMLP<
         }
     }
 
-    public property Configuration configuration {
-        get {
-            return RWStructuredBuffer<int>(layerAddressBuffer);
-        }
-    }
-
     public property Dual dual {
         get {
-            return DifferentialPtrPair<Parameters>(StructuredBufferStorage<float>(parameterBuffer), StructuredBufferStorage<float>(gradientBuffer));
+            let p = StructuredBufferStorage<float>(parameterBuffer);
+            let g = StructuredBufferStorage<float>(gradientBuffer);
+            return DifferentialPtrPair<Parameters>(p, g);
         }
     }
 
+    // public void optimize<Optimizer>(Optimizer optimizer, inout Optimizer.State state, uint tid)
+    //     where Optimizer : IOptimizer<float>
+    // {
+    //     optimizer.step(state, parameterBuffer[tid], gradientBuffer[tid]);
+    // }
+
     [BackwardDifferentiable]
-    public static OutputVec eval(
-        Parameters parameterStorage,
-        Configuration layerAddresses,
-        InputVec input)
+    public static OutputVec eval(Parameters parameterStorage, InputVec input)
     {
         typealias HiddenVec = InlineVector<float, Hidden>;
 
@@ -54,16 +50,20 @@ public struct AddressBasedMLP<
         typealias HiddenLayer = FeedForward<float, Hidden, Hidden, StorageType, HiddenActivation>;
         typealias LastLayer = FeedForward<float, Hidden, Out, StorageType, OutputActivation>;
 
-        let ff1 = FirstLayer(layerAddresses[0], {});
+        var offset = 0;
+        
+        let ff1 = FirstLayer(offset, {});
         var hidden = ff1.eval<InputVec, HiddenVec>(parameterStorage, input);
+        offset += (In + 1) * Hidden;
 
         [ForceUnroll]
         for (int i = 0; i < HiddenLayers; i++) {
-            let ff = HiddenLayer(layerAddresses[i + 1], {});
+            let ff = HiddenLayer(offset, {});
             hidden = ff.eval<HiddenVec, HiddenVec>(parameterStorage, hidden);
+            offset += (Hidden + 1) * Hidden;
         }
 
-        let ffN = LastLayer(layerAddresses[HiddenLayers + 1], {});
+        let ffN = LastLayer(offset, {});
         let output = ffN.eval<HiddenVec, OutputVec>(parameterStorage, hidden);
 
         return output;

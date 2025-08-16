@@ -361,7 +361,6 @@ def main():
     sns.lineplot(history_array, alpha=0.5, color="green")
     sns.lineplot(gaussian_filter(history_array, 5), linewidth=2.5, color="green")
     plt.yscale("log")
-    plt.savefig("plots/history.png")
     plt.show()
 
 if __name__ == "__main__":

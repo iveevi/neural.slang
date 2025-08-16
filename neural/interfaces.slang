@@ -101,8 +101,7 @@ public interface ILoss<T>
 {
     [NoDiffThis, BackwardDifferentiable]
     public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
-        where Vector : IVector<T, N>
-        where Vector.Differential == Vector;
+        where Vector : IVector<T, N>;
 }
 
 // Optimizer interface

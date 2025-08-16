@@ -21,18 +21,21 @@ def main():
     network = Network(device, hidden=hidden, hidden_layers=hidden_layers, levels=0, input=3, output=1)
     rendering_pipeline = RenderingPipeline(device, network)
     training_pipeline = TrainingPipeline(device, network)
+
+    mlp = {
+        "parameterBuffer": network.parameters.descriptor_handle_rw,
+        "gradientBuffer": network.gradients.descriptor_handle_rw,
+    }
     
-    # MLP buffer
-    mlp_buffer = device.create_buffer(
-        size=rendering_pipeline.mlp_layout.stride,
-        usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
-    )
+    # # MLP buffer
+    # mlps = device.create_buffer(
+    #     size=rendering_pipeline.mlp_layout.stride,
+    #     usage=spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access,
+    # )
     
-    mlp_buffer_cursor = spy.BufferCursor(rendering_pipeline.mlp_layout, mlp_buffer)
-    # mlp_buffer_cursor[0].parameterBuffer = network.parameters.descriptor_handle_rw
-    # mlp_buffer_cursor[0].gradientBuffer = network.gradients.descriptor_handle_rw
-    mlp_buffer_cursor[0].layerAddressBuffer = network.layer_addresses.descriptor_handle_ro
-    mlp_buffer_cursor[0].parameterCount = network.parameter_count
+    # mlps_cursor = spy.BufferCursor(rendering_pipeline.mlp_layout, mlps)
+    # mlps_cursor[0].parameterBuffer = network.parameters.descriptor_handle_rw
+    # mlps_cursor[0].gradientBuffer = network.gradients.descriptor_handle_rw
 
     # Allocate loss buffer
     SAMPLE_COUNT = 1 << 10
@@ -82,9 +85,9 @@ def main():
         # Rendering
         # TODO: render at a lower resolution than the window (render to texture, then interpolate texture)
         if render_heatmap:
-            rendering_pipeline.render_heatmap(network, camera.rayframe(), texture)
+            rendering_pipeline.render_heatmap(mlp, camera.rayframe(), texture)
         else:
-            rendering_pipeline.render_normal(network, camera.rayframe(), texture)
+            rendering_pipeline.render_normal(mlp, camera.rayframe(), texture)
 
         # Training
         samples = (2 * np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) - 1)
@@ -99,7 +102,8 @@ def main():
         loss = np.abs(sdf_neural - sdf).mean()
         history.append(loss)
 
-        training_pipeline.backward(network, sample_buffer, sdf_buffer)
+        # training_pipeline.backward(network, sample_buffer, sdf_buffer)
+        rendering_pipeline.backward(mlp, sample_buffer, sdf_buffer, SAMPLE_COUNT)
         training_pipeline.optimize(network)
         
         frame.blit(texture)

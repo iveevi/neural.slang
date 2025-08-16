@@ -9,48 +9,25 @@ import mlp;
 import neural;
 import network_with_addresses;
 
-// Rendering the reference mesh
-uniform RayFrame rayFrame;
-uniform RWTexture2D targetTexture;
-uniform uint2 targetResolution;
-
-// Rendering the neural SDF
-extern static const int Hidden;
-extern static const int HiddenLayers;
-extern static const int Levels;
-extern struct ColorMap : IColorMap = Plasma;
-
-// TODO: encoder as well...
-extern struct MLP : IMLP<float, 3, 1>;
-
-RWStructuredBuffer<MLP> mlps;
-
-typealias Encoder = IdentityEncoder<float, 3>;
-
-typealias Network = NetworkWithAddresses<
-    3, 1, Encoder.Out,
-    Hidden, HiddenLayers,
-    Encoder,
-    ReLU<float>,
->;
-
-ParameterBlock<Network> network;
-
-public extension Network : ISignedDistanceField
-{
-    public float sdf(float3 p)
-    {
-        return forward(Network.InputVec.fromVector(p))[0];
-    }
-}
+// Neural network and extensions
+typealias MLP = AddressBasedMLP<3, 1, 32, 2, ReLU<float>, Identity<float>>;
 
 public extension MLP : ISignedDistanceField
 {
     public float sdf(float3 p)
     {
-        return eval(parameters, configuration, InputVec.fromVector(p))[0];
+        return eval(parameters, InputVec.fromVector(p))[0];
     }
 }
+
+uniform MLP mlp;
+
+// Rendering the neural SDF
+uniform RayFrame rayFrame;
+uniform RWTexture2D targetTexture;
+uniform uint2 targetResolution;
+
+extern struct ColorMap : IColorMap = Plasma;
 
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -60,9 +37,6 @@ void render_heatmap(uint3 tid : SV_DispatchThreadID)
     uv.y = 1 - uv.y;
 
     let ray = rayFrame.rayAt(uv);
-
-    let mlp = mlps[0];
-
     let intx = sphereTrace(mlp, ray, 100, 1e-3, 10.0);
     float3 color = ColorMap(0, 100).eval(intx.steps);
     targetTexture.Store(tid.xy, float4(color, 1));
@@ -76,8 +50,33 @@ void render_normal(uint3 tid : SV_DispatchThreadID)
     uv.y = 1 - uv.y;
 
     let ray = rayFrame.rayAt(uv);
-
-    let intx = sphereTrace((Network) network, ray, 100, 1e-3, 10.0);
-    float3 color = (intx.t > 0.0) ? intx.n * 0.5 + 0.5 : float3(0, 0, 0);
+    let intx = sphereTrace(mlp, ray, 100, 1e-3, 10.0);
+    float3 color = 0.5 * intx.n + 0.5;
     targetTexture.Store(tid.xy, float4(color, 1));
+}
+
+// Backward pass
+[BackwardDifferentiable]
+float loss(
+    MLP.Parameters parameters,
+    no_diff MLP.InputVec input,
+    no_diff MLP.OutputVec expected)
+{
+    return MeanSquaredError<float>().eval(MLP.eval(parameters, input), expected);
+}
+
+uniform RWStructuredBuffer<MLP.InputVec> inputBuffer;
+uniform RWStructuredBuffer<MLP.OutputVec> expectedBuffer;
+uniform float boost;
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void backward(uint3 tid : SV_DispatchThreadID)
+{
+    bwd_diff(loss)(
+        mlp.dual,
+        inputBuffer[tid.x],
+        expectedBuffer[tid.x],
+        boost
+    );
 }
