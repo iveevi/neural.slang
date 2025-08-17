@@ -49,14 +49,16 @@ class RenderingPipeline:
 
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
         self.optimize_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "optimize")
+        self.update_sdf_grid_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_sdf_grid")
         
-    def render_heatmap(self, mlp: MLP, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_heatmap(self, mlp: MLP, sdf_grid: Object, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_heatmap_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.mlp = mlp.dict()
+            cursor.sdfGrid = sdf_grid.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
@@ -64,13 +66,14 @@ class RenderingPipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def render_normal(self, mlp: MLP, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_normal(self, mlp: MLP, sdf_grid: Object, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_normal_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.mlp = mlp.dict()
+            cursor.sdfGrid = sdf_grid.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
@@ -78,15 +81,17 @@ class RenderingPipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def backward(self, mlp: MLP, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, sample_count: int):
+    def backward(self, mlp: MLP, sdf_grid: Object, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, loss_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.backward_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.mlp = mlp.dict()
+            cursor.sdfGrid = sdf_grid.dict()
             cursor.inputBuffer = input_buffer
             cursor.expectedBuffer = expected_buffer
+            cursor.lossBuffer = loss_buffer
             cursor.boost = 1.0 / sample_count
             cmd.dispatch(thread_count=(sample_count, 1, 1))
 
@@ -99,6 +104,19 @@ class RenderingPipeline:
             shader_object = cmd.bind_pipeline(self.optimize_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.mlp = mlp.dict()
+            cursor.optimizer = optimizer.dict()
+            cursor.optimizerStates = optimizer_states
+            cmd.dispatch(thread_count=(parameter_count, 1, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def update_sdf_grid(self, sdf_grid: Object, optimizer: Optimizer, optimizer_states: spy.Buffer, parameter_count: int):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.update_sdf_grid_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.sdfGrid = sdf_grid.dict()
             cursor.optimizer = optimizer.dict()
             cursor.optimizerStates = optimizer_states
             cmd.dispatch(thread_count=(parameter_count, 1, 1))

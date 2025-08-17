@@ -196,6 +196,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
         return result;
     }
 
+    // TODO: start relying more on autodiff and remove the explicit bwds
     [BackwardDerivative(sinBwd)]
     public This sin()
     {
@@ -304,6 +305,18 @@ public struct InlineVector<T, int N> : IVector<T, N>
             dthis.p,
             dadd(dthis.d, This(__slang_noop_cast<T>(doutput)))
         );
+    }
+
+    // Interpolation
+    [BackwardDifferentiable]
+    public static This interpolate(This a, This b, T t)
+    {
+        This result = This();
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            result[i] = a[i] * (T(1.0) - t) + b[i] * t;
+
+        return result;
     }
 }
 

@@ -1,9 +1,13 @@
 implementing neural;
 
 // Extensions for scalar types
-public interface IConvertibleToInt
+extension<T> T
+    where T : __BuiltinFloatingPointType
 {
-    int toInt();
+    int toInt()
+    {
+        return int(this.toFloat());
+    }
 }
 
 // Storage interfaces

@@ -6,21 +6,9 @@ import pytorch_volumetric as pv
 from dataclasses import dataclass
 from scipy.ndimage import gaussian_filter
 from common import *
-from ..networks.addresses import Network, TrainingPipeline
+from ..networks.addresses import Network
 from ..util import *
 from .addresses import *
-
-
-@dataclass
-class AddressBasedMLP(MLP):
-    parameter_buffer: spy.Buffer
-    gradient_buffer: spy.Buffer
-
-    def dict(self):
-        return {
-            "parameterBuffer": self.parameter_buffer,
-            "gradientBuffer": self.gradient_buffer,
-        }
 
 
 @dataclass
@@ -39,6 +27,60 @@ class Adam(Optimizer):
         }
 
 
+@dataclass
+class AddressBasedMLP(MLP):
+    parameter_buffer: spy.Buffer
+    gradient_buffer: spy.Buffer
+
+    def dict(self):
+        return {
+            "parameterBuffer": self.parameter_buffer,
+            "gradientBuffer": self.gradient_buffer,
+        }
+
+
+@dataclass
+class FeatureGrid(Object):
+    parameter_buffer: spy.Buffer
+    gradient_buffer: spy.Buffer
+    offset: int
+    resolution: int
+    features: int
+    dimension: int
+
+    # TODO: should be properties... @property view
+    def dict(self):
+        return {
+            "parameterBuffer": self.parameter_buffer,
+            "gradientBuffer": self.gradient_buffer,
+            "offset": self.offset,
+            "resolution": self.resolution,
+        }
+
+    @property
+    def parameter_count(self):
+        return self.resolution ** self.dimension * self.features
+
+    def alloc_optimizer_states(self, device: spy.Device, optimizer: Optimizer):
+        assert isinstance(optimizer, Adam)
+        return create_buffer_32b(device, np.zeros((3 * self.parameter_count,), dtype=np.float32), 3)
+
+    @staticmethod
+    def new(device: spy.Device, dimension: int, features: int, resolution: int):
+        p = 2 * np.random.rand(resolution ** dimension * features).astype(np.float32) - 1
+        g = np.zeros((resolution ** dimension * features,), dtype=np.float32)
+        parameter_buffer = create_buffer_32b(device, p, features)
+        gradient_buffer = create_buffer_32b(device, g, features)
+        return FeatureGrid(
+            parameter_buffer,
+            gradient_buffer,
+            0,
+            resolution,
+            features,
+            dimension,
+        )
+
+
 def main():
     device = create_device()
     
@@ -47,17 +89,21 @@ def main():
     
     network = Network(device, hidden=hidden, hidden_layers=hidden_layers, levels=0, input=3, output=1)
     rendering_pipeline = RenderingPipeline(device, network)
-    training_pipeline = TrainingPipeline(device, network)
 
     mlp = AddressBasedMLP(
         parameter_buffer=network.parameters,
         gradient_buffer=network.gradients,
     )
 
+    optimizer = Adam()
+    grid = FeatureGrid.new(device, 3, 1, 32)
+    grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
+
     # Allocate loss buffer
     SAMPLE_COUNT = 1 << 10
     sample_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 3), dtype=np.float32), 3)
     sdf_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
+    loss_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
 
     mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "spot.obj"))
     mesh_sdf = pv.MeshSDF(mesh_obj)
@@ -100,29 +146,28 @@ def main():
         camera.transform.look_at(np.array((0.0, 0.0, 0.0)))
         
         # Rendering
-        # TODO: render at a lower resolution than the window (render to texture, then interpolate texture)
         if render_heatmap:
-            rendering_pipeline.render_heatmap(mlp, camera.rayframe(), texture)
+            rendering_pipeline.render_heatmap(mlp, grid, camera.rayframe(), texture)
         else:
-            rendering_pipeline.render_normal(mlp, camera.rayframe(), texture)
+            rendering_pipeline.render_normal(mlp, grid, camera.rayframe(), texture)
 
         # Training
         samples = (2 * np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) - 1)
         sample_buffer.copy_from_numpy(samples)
 
-        training_pipeline.forward(network, sample_buffer, sdf_buffer)
-        sdf_neural = sdf_buffer.to_numpy().view(np.float32)
-
         sdf = target_sdf(samples)
         sdf_buffer.copy_from_numpy(sdf)
 
-        loss = np.abs(sdf_neural - sdf).mean()
+        rendering_pipeline.backward(mlp, grid, sample_buffer, sdf_buffer, loss_buffer, SAMPLE_COUNT)
+
+        # grid_gradient = grid.gradient_buffer.to_numpy().view(np.float32)
+        # print("grid gradient", grid.parameter_count, grid_gradient.shape, grid_gradient.min(), grid_gradient.max())
+
+        loss = loss_buffer.to_numpy().view(np.float32).mean()
         history.append(loss)
 
-        # training_pipeline.backward(network, sample_buffer, sdf_buffer)
-        rendering_pipeline.backward(mlp, sample_buffer, sdf_buffer, SAMPLE_COUNT)
-        # training_pipeline.optimize(network)
-        rendering_pipeline.optimize(mlp, Adam(), network.optimizer_states, network.parameter_count)
+        rendering_pipeline.optimize(mlp, optimizer, network.optimizer_states, network.parameter_count)
+        rendering_pipeline.update_sdf_grid(grid, optimizer, grid_optimizer_states, grid.parameter_count)
         
         frame.blit(texture)
 

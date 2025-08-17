@@ -4,68 +4,6 @@ implementing neural;
 // Dense grid //
 ////////////////
 
-// Snapped position and interpolation weights
-struct Snapped<T, int D>
-{
-    int[D] lower;
-    int[D] upper;
-    T[D] t;
-}
-
-// Snap a position to the lattice, returning the lower and upper indices and interpolation weights
-Snapped<T, D> snapToLattice<Vector, T, int D>(no_diff Vector position, int[D] resolution)
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
-    where Vector : IVector<T, D>
-{
-    Snapped<T, D> result;
-
-    [ForceUnroll]
-    for (int d = 0; d < D; d++)
-    {
-        let scaled = position[d] * T(resolution[d]);
-        let index = floor(scaled).toInt();
-        result.lower[d] = index;
-        result.upper[d] = index + 1;
-        result.t[d] = scaled - T(index);
-    }
-
-    return result;
-}
-
-// Overload that takes a single resolution value for all dimensions
-Snapped<T, D> snapToLattice<Vector, T, int D>(no_diff Vector position, int resolution)
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
-    where Vector : IVector<T, D>
-{
-    Snapped<T, D> result;
-
-    [ForceUnroll]
-    for (int d = 0; d < D; d++)
-    {
-        let scaled = position[d] * T(resolution);
-        let index = floor(scaled).toInt();
-        result.lower[d] = index;
-        result.upper[d] = index + 1;
-        result.t[d] = scaled - T(index);
-    }
-
-    return result;
-}
-
-// Calculate flat index from N-dimensional coordinates using row-major ordering
-int calculateFlatIndex<int D>(int[D] coords, int resolution)
-{
-    int flatIndex = 0;
-    int stride = 1;
-    [ForceUnroll]
-    for (int d = 0; d < D; d++)
-    {
-        flatIndex += coords[d] * stride;
-        stride *= resolution;
-    }
-    return flatIndex;
-}
-
 public struct DenseGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
