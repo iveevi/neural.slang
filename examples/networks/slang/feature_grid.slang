@@ -68,6 +68,31 @@ public struct DenseGrid<int D, int Features>
         return value;
     }
 
+    [NoDiffThis, BackwardDerivative(sampleBilinearBwd)]
+    public FeatureVector sampleBilinear(StructuredBufferStorage<float> storage, InlineVector<float, D> p)
+    {
+        static_assert(D == 2, "Bilinear interpolation is only supported for 2D inputs");
+        
+        let snapped = snapToLattice<InlineVector<float, D>, float, D>(p, resolution);
+        
+        let idx00 = snapped.lower[1] * resolution + snapped.lower[0];
+        let idx01 = snapped.upper[1] * resolution + snapped.lower[0];
+        let idx10 = snapped.lower[1] * resolution + snapped.upper[0];
+        let idx11 = snapped.upper[1] * resolution + snapped.upper[0];
+        
+        let value00 = get(storage, idx00);
+        let value01 = get(storage, idx01);
+        let value10 = get(storage, idx10);
+        let value11 = get(storage, idx11);
+        
+        let value0 = FeatureVector.interpolate(value00, value10, snapped.t[0]);
+        let value1 = FeatureVector.interpolate(value01, value11, snapped.t[0]);
+        
+        let value = FeatureVector.interpolate(value0, value1, snapped.t[1]);
+        
+        return value;
+    }
+
     public void sampleLinearBwd(
         DifferentialPtrPair<StructuredBufferStorage<float>> dstorage,
         inout DifferentialPair<InlineVector<float, D>> dp,
@@ -102,6 +127,80 @@ public struct DenseGrid<int D, int Features>
         var dp_d = dp.d;
         dp_d[0] += grad_d;
         dp = DifferentialPair<InlineVector<float, D>>(dp.p, dp_d);
+    }
+
+    public void sampleBilinearBwd(
+        DifferentialPtrPair<StructuredBufferStorage<float>> dstorage,
+        inout DifferentialPair<InlineVector<float, D>> dp,
+        FeatureVector.Differential doutput
+    )
+    {
+        static_assert(D == 2, "Bilinear interpolation is only supported for 2D inputs");
+        
+        // Reconstruct the snapped lattice information
+        let snapped = snapToLattice<InlineVector<float, D>, float, D>(dp.p, resolution);
+        
+        // Calculate indices for the 4 corners
+        let idx00 = snapped.lower[1] * resolution + snapped.lower[0];
+        let idx01 = snapped.upper[1] * resolution + snapped.lower[0];
+        let idx10 = snapped.lower[1] * resolution + snapped.upper[0];
+        let idx11 = snapped.upper[1] * resolution + snapped.upper[0];
+        
+        // Get the corner values for gradient computation
+        let value00 = get(dstorage.p, idx00);
+        let value01 = get(dstorage.p, idx01);
+        let value10 = get(dstorage.p, idx10);
+        let value11 = get(dstorage.p, idx11);
+        
+        // Forward pass interpolation (reconstructed for gradient computation)
+        let value0 = FeatureVector.interpolate(value00, value10, snapped.t[0]);
+        let value1 = FeatureVector.interpolate(value01, value11, snapped.t[0]);
+        
+        // Backward pass: propagate gradients through interpolation chain
+        // Final interpolation: value = value0 * (1-t[1]) + value1 * t[1]
+        let dvalue0 = scalarMul(doutput, 1.0 - snapped.t[1]);
+        let dvalue1 = scalarMul(doutput, snapped.t[1]);
+        
+        // First level interpolation: value0 = value00 * (1-t[0]) + value10 * t[0]
+        // value1 = value01 * (1-t[0]) + value11 * t[0]
+        let dvalue00 = scalarMul(dvalue0, 1.0 - snapped.t[0]);
+        let dvalue10 = scalarMul(dvalue0, snapped.t[0]);
+        let dvalue01 = scalarMul(dvalue1, 1.0 - snapped.t[0]);
+        let dvalue11 = scalarMul(dvalue1, snapped.t[0]);
+        
+        // Accumulate gradients to storage
+        getBwd(dstorage, idx00, dvalue00);
+        getBwd(dstorage, idx01, dvalue01);
+        getBwd(dstorage, idx10, dvalue10);
+        getBwd(dstorage, idx11, dvalue11);
+        
+        // Compute gradients with respect to input position
+        // For each dimension, we need to compute the derivative of the interpolation weights
+        [ForceUnroll]
+        for (int d = 0; d < D; d++)
+        {
+            // The derivative of snapped.t[d] with respect to p[d] is resolution
+            let dt_dp = float(resolution);
+            
+            // Compute gradient contribution for this dimension
+            float grad_d = 0.0;
+            
+            if (d == 0)
+            {
+                // Derivatives with respect to t[0]
+                grad_d += dot(dvalue0, value10.sub(value00)) * dt_dp;
+                grad_d += dot(dvalue1, value11.sub(value01)) * dt_dp;
+            }
+            else if (d == 1)
+            {
+                // Derivatives with respect to t[1]
+                grad_d += dot(doutput, value1.sub(value0)) * dt_dp;
+            }
+            
+            var dp_d = dp.d;
+            dp_d[d] += grad_d;
+            dp = DifferentialPair<InlineVector<float, D>>(dp.p, dp_d);
+        }
     }
 
     [NoDiffThis, BackwardDerivative(sampleTrilinearBwd)]
@@ -246,10 +345,14 @@ public struct DenseGrid<int D, int Features>
     {
         if (D == 1)
             return sampleLinear(storage, p);
+        else if (D == 2)
+            return sampleBilinear(storage, p);
         else if (D == 3)
             return sampleTrilinear(storage, p);
         else
-            static_assert(false, "FeatureGrid only supports 1D and 3D inputs");
+            static_assert(false, "FeatureGrid only supports 1D, 2D, and 3D inputs");
+
+        return FeatureVector();
     }
 }
 

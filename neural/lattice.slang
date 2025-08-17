@@ -18,11 +18,23 @@ public Snapped<T, D> snapToLattice<Vector, T, int D>(no_diff Vector position, in
     [ForceUnroll]
     for (int d = 0; d < D; d++)
     {
-        let scaled = position[d] * T(resolution[d]);
+        let scaled = position[d] * T(resolution[d] - 1);
         let index = floor(scaled).toInt();
-        result.lower[d] = index;
-        result.upper[d] = index + 1;
-        result.t[d] = scaled - T(index);
+        // Clamp indices to prevent out-of-bounds access (matching PyTorch exactly)
+        result.lower[d] = max(0, min(index, resolution[d] - 2));
+        result.upper[d] = max(1, min(index + 1, resolution[d] - 1));
+        
+        // Handle boundary case: if we're at the very end, ensure proper interpolation
+        if (index >= resolution[d] - 1)
+        {
+            result.lower[d] = resolution[d] - 2;
+            result.upper[d] = resolution[d] - 1;
+            result.t[d] = T(1.0);  // Use full weight for the last element
+        }
+        else
+        {
+            result.t[d] = scaled - T(index);
+        }
     }
 
     return result;
@@ -38,11 +50,23 @@ public Snapped<T, D> snapToLattice<Vector, T, int D>(no_diff Vector position, in
     [ForceUnroll]
     for (int d = 0; d < D; d++)
     {
-        let scaled = position[d] * T(resolution);
+        let scaled = position[d] * T(resolution - 1);
         let index = floor(scaled).toInt();
-        result.lower[d] = index;
-        result.upper[d] = index + 1;
-        result.t[d] = scaled - T(index);
+        // Clamp indices to prevent out-of-bounds access (matching PyTorch exactly)
+        result.lower[d] = max(0, min(index, resolution - 2));
+        result.upper[d] = max(1, min(index + 1, resolution - 1));
+        
+        // Handle boundary case: if we're at the very end, ensure proper interpolation
+        if (index >= resolution - 1)
+        {
+            result.lower[d] = resolution - 2;
+            result.upper[d] = resolution - 1;
+            result.t[d] = T(1.0);  // Use full weight for the last element
+        }
+        else
+        {
+            result.t[d] = scaled - T(index);
+        }
     }
 
     return result;

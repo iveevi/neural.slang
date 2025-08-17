@@ -4,22 +4,10 @@ import slangpy as spy
 from common import *
 from ..networks.addresses import Network, TrainingPipeline
 from ..util import *
+from ..ngp.objects import Object, Optimizer, MLP
 
 
 HERE = ROOT / "examples" / "sdf"
-
-
-class Object:
-    def dict(self):
-        raise NotImplementedError("Object must implement dict")
-
-
-class Optimizer(Object):
-    pass
-
-
-class MLP(Object):
-    pass
 
 
 # TODO: move to main as a mlp agnostic pipeline
