@@ -11,12 +11,17 @@ import neural;
 import network_with_addresses;
 
 // Neural network and extensions
-typealias MLP = AddressBasedMLP<2, 1, 32, 2, ReLU<float>, Identity<float>>;
+extern static const int Hidden;
+extern static const int HiddenLayers;
+extern static const int Features;
+
+typealias MLP = AddressBasedMLP<Features, 1, Hidden, HiddenLayers, Sine<float>, Identity<float>>;
+typealias Grid = FeatureGrid<3, Features>;
 typealias Optimizer = Adam<float>;
 
 // TODO: scene parameter block with sdf method...
 uniform MLP mlp;
-uniform FeatureGrid<3, 2> grid;
+uniform Grid grid;
 
 public extension MLP : IBoundedSignedDistanceField
 {
@@ -39,9 +44,9 @@ public extension MLP : IBoundedSignedDistanceField
         if (inBounds(p))
         {
             let input = InlineVector<float, 3>.fromVector(normalized(p));
-            let feature = grid.sample(grid.parameters, grid.configuration, input);
-            let predicted = feature.slice<0, 1>();
-            // let predicted = mlp.eval(parameters, feature);
+            let feature = grid.eval(grid.parameters, grid.configuration, input);
+            // let predicted = feature.slice<0, 1>();
+            let predicted = mlp.eval(parameters, feature);
             return predicted[0];
         }
         else
@@ -108,9 +113,9 @@ float loss(
     if (mlp.inBounds(p))
     {
         let input = InlineVector<float, 3>.fromVector(mlp.normalized(p));
-        let feature = grid.sample(gridParameters, grid.configuration, input);
-        // let predicted = mlp.eval(mlpParameters, feature);
-        let predicted = feature.slice<0, 1>();
+        let feature = grid.eval(gridParameters, grid.configuration, input);
+        let predicted = mlp.eval(mlpParameters, feature);
+        // let predicted = feature.slice<0, 1>();
         return mse.eval(predicted, expected);
     }
     else

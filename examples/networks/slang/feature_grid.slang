@@ -402,11 +402,11 @@ public struct FeatureGrid<int D, int Features>
     }
 
     [BackwardDifferentiable]
-    public static FeatureVector sample(Parameters parameters, no_diff Configuration configuration, InlineVector<float, D> p)
+    public static FeatureVector eval(Parameters parameters, no_diff Configuration configuration, InlineVector<float, D> p)
     {
         return DenseGrid<D, Features>(
-		configuration.offset,
-		configuration.resolution
-	).sample(parameters, p);
+            configuration.offset,
+            configuration.resolution
+        ) .sample(parameters, p);
     }
 }
