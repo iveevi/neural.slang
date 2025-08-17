@@ -18,13 +18,47 @@ uniform MLP mlp;
 // uniform FeatureGrid<3, 8> featureGrid;
 uniform FeatureGrid<3, 1> sdfGrid;
 
-public extension MLP : ISignedDistanceField
+public extension MLP : IBoundedSignedDistanceField
 {
+    static const let box = Box(float3(-1, -1, -1), float3(1, 1, 1));
+
+    // public float sdf(float3 p)
+    // {
+    //     let input = InlineVector<float, 3>.fromVector(p);
+    //     return eval(parameters, InputVec.fromVector(p))[0];
+    // }
+
+    public bool inBounds(float3 p)
+    {
+        return box.contains(p);
+    }
+
+    [NoDiffThis, Differentiable]
+    public float3 normalized(float3 p)
+    {
+        return box.normalized(p);
+    }
+    
     public float sdf(float3 p)
     {
-        let input = InlineVector<float, 3>.fromVector(p);
-        // return sdfGrid.sample(sdfGrid.parameters, sdfGrid.configuration, input)[0];
-        return eval(parameters, InputVec.fromVector(p))[0];
+        // Only use sdf grid within bounding box
+        if (inBounds(p))
+        {
+            let input = InlineVector<float, 3>.fromVector(normalized(p));
+            return sdfGrid.sample(sdfGrid.parameters, sdfGrid.configuration, input)[0];
+        }
+        else
+        {
+            return box.sdf(p);
+        }
+    }
+
+    public float skip(Ray ray)
+    {
+        if (let t = box.intersection(ray))
+            return t + 1e-3;
+        else
+            return 0.0;
     }
 }
 
@@ -43,7 +77,11 @@ void render_heatmap(uint3 tid : SV_DispatchThreadID)
     uv.y = 1 - uv.y;
 
     let ray = rayFrame.rayAt(uv);
-    let intx = sphereTrace(mlp, ray, 100, 1e-3, 10.0);
+    let skipped = mlp.skip(ray);
+    // let intxBox = sphereTrace(mlp.box, ray, 100, 1e-3, 10.0);
+    // float3 color = ColorMap(0, 5).eval(intxBox.t);
+    // float3 color = ColorMap(0, 5).eval(skipped);
+    let intx = sphereTraceBounded(mlp, ray, 100, 1e-3, 10.0);
     float3 color = ColorMap(0, 100).eval(intx.steps);
     targetTexture.Store(tid.xy, float4(color, 1));
 }
@@ -56,7 +94,7 @@ void render_normal(uint3 tid : SV_DispatchThreadID)
     uv.y = 1 - uv.y;
 
     let ray = rayFrame.rayAt(uv);
-    let intx = sphereTrace(mlp, ray, 100, 1e-3, 10.0);
+    let intx = sphereTraceBounded(mlp, ray, 100, 1e-3, 10.0);
     float3 color = 0.5 * intx.n + 0.5;
     targetTexture.Store(tid.xy, float4(color, 1));
 }
@@ -71,13 +109,20 @@ float loss(
 {
     static const let mse = MeanSquaredError<float>();
     
-    let input = InlineVector<float, 3>.fromVector(p);
     let expected = InlineVector<float, 1>.fromVector(s);
 
-    // let predicted = sdfGrid.sample(sdfGridParameters, sdfGrid.configuration, input);
-    let predicted = MLP.eval(parameters, input);
+    if (mlp.inBounds(p))
+    {
+        let input = InlineVector<float, 3>.fromVector(mlp.normalized(p));
+        let predicted = sdfGrid.sample(sdfGridParameters, sdfGrid.configuration, input);
+        return mse.eval(predicted, expected);
 
-    return mse.eval(predicted, expected);
+        // let predicted = MLP.eval(parameters, input);
+    }
+    else
+    {
+        return 0.0;
+    }
 }
 
 uniform RWStructuredBuffer<float3, ScalarDataLayout> inputBuffer;

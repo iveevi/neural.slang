@@ -10,8 +10,11 @@ float dot2(float3 v) { return dot(v, v); }
 public interface ISignedDistanceField
 {
     public float sdf(float3 p);
+}
 
-    // TODO: default normal vector computation
+public interface IBoundedSignedDistanceField : ISignedDistanceField
+{
+    public float skip(Ray ray);
 }
 
 // Essential primitives
@@ -90,6 +93,33 @@ public SphereTraceResult sphereTrace<Object>(Object object, Ray ray, int maxIter
     where Object : ISignedDistanceField
 {
     float t = tMin;
+    for (int i = 0; i < maxIters; i++)
+    {
+        float3 p = ray.origin + t * ray.direction;
+        float d = object.sdf(p);
+        if (abs(d) < 0.001)
+        {
+            // Finite difference normal
+            float3 n = float3(0.0, 0.0, 0.0);
+            n.x = object.sdf(float3(p.x + 1e-4, p.y, p.z)) - object.sdf(float3(p.x - 1e-4, p.y, p.z));
+            n.y = object.sdf(float3(p.x, p.y + 1e-4, p.z)) - object.sdf(float3(p.x, p.y - 1e-4, p.z));
+            n.z = object.sdf(float3(p.x, p.y, p.z + 1e-4)) - object.sdf(float3(p.x, p.y, p.z - 1e-4));
+            return { t, p, normalize(n), i };
+        }
+        if (t > tMax)
+            return { -1.0, float3(0.0), float3(0.0), i };
+
+        t += d;
+    }
+
+    return { -1.0, float3(0.0), float3(0.0), maxIters };
+}
+
+// Specialized sphere tracing for bounded signed distance fields
+public SphereTraceResult sphereTraceBounded<Object>(Object object, Ray ray, int maxIters, float tMin, float tMax)
+    where Object : IBoundedSignedDistanceField
+{
+    float t = max(tMin, object.skip(ray));
     for (int i = 0; i < maxIters; i++)
     {
         float3 p = ray.origin + t * ray.direction;

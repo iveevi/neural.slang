@@ -8,7 +8,7 @@ from scipy.ndimage import gaussian_filter
 from common import *
 from ..networks.addresses import Network
 from ..util import *
-from ..ngp.objects import Object, Optimizer, MLP, Adam, FeatureGrid
+from ..ngp.objects import MLP, Adam, FeatureGrid
 from .addresses import *
 
 
@@ -39,29 +39,32 @@ def main():
     )
 
     optimizer = Adam()
-    grid = FeatureGrid.new(device, 3, 1, 32)
+    grid = FeatureGrid.new(device, 3, 1, 16)
     grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
 
     # Allocate loss buffer
-    SAMPLE_COUNT = 1 << 10
+    SAMPLE_COUNT = 1 << 12
     sample_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 3), dtype=np.float32), 3)
     sdf_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
     loss_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
 
-    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "spot.obj"))
+    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "bunny.obj"))
     mesh_sdf = pv.MeshSDF(mesh_obj)
 
     def target_sdf(samples: np.ndarray) -> np.ndarray:
         return mesh_sdf(samples)[0].numpy()
-        # return np.linalg.norm(samples, axis=1) - 1.0
         
     render_heatmap = True
+    pause_rotation = False
     
     def keyboard_hook(event: spy.KeyboardEvent):
         if event.type == spy.KeyboardEventType.key_press:
             if event.key == spy.KeyCode.tab:
                 nonlocal render_heatmap
                 render_heatmap = not render_heatmap
+            elif event.key == spy.KeyCode.space:
+                nonlocal pause_rotation
+                pause_rotation = not pause_rotation
 
     app = App(device, keyboard_hook=keyboard_hook)
 
@@ -81,12 +84,17 @@ def main():
     camera.transform.position = np.array((0.0, 0.0, 5.0))
     
     history = []
+    counter = 0
 
     def loop(frame: Frame):
+        nonlocal counter
+
         # TODO: mouse controlled orbital camera
-        time = frame.count[0] * 0.01
+        time = counter * 0.01
         camera.transform.position = 5.0 * np.array((np.cos(time), 0.0, np.sin(time)))
         camera.transform.look_at(np.array((0.0, 0.0, 0.0)))
+        if not pause_rotation:
+            counter += 1
         
         # Rendering
         if render_heatmap:
