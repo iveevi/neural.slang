@@ -11,14 +11,14 @@ class BaseFeatureGridPipeline:
     def __init__(self, device: spy.Device, slang_file: str):
         HERE = pathlib.Path(__file__).parent
         SOURCE = HERE / "slang" / slang_file
-        
+
         self.device = device
         self.module = device.load_module(str(SOURCE))
 
         self.forward_pipeline = create_compute_pipeline(device, self.module, [], "forward_pass")
         self.backward_pipeline = create_compute_pipeline(device, self.module, [], "backward_pass")
         self.update_pipeline = create_compute_pipeline(device, self.module, [], "update_parameters")
-        
+
     def forward(self, feature_grid: FeatureGrid, input_buffer: spy.Buffer, output_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
@@ -74,18 +74,18 @@ class FeatureGridPipeline(BaseFeatureGridPipeline):
     def __init__(self, device: spy.Device, dimension: int, features: int):
         HERE = pathlib.Path(__file__).parent
         SOURCE = HERE / "slang" / "main.slang"
-        
+
         self.device = device
         self.dimension = dimension
         self.features = features
-        
+
         self.module = device.load_module(str(SOURCE))
         self.specialization_module = self.load_specialization_module(device, dimension, features)
 
         self.forward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "forward_pass")
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward_pass")
         self.update_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_parameters")
-    
+
     def forward(self, feature_grid: FeatureGrid, input_buffer: spy.Buffer, output_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
@@ -99,7 +99,7 @@ class FeatureGridPipeline(BaseFeatureGridPipeline):
             cmd.dispatch(thread_count=(sample_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
-    
+
     def backward(self, feature_grid: FeatureGrid, input_buffer: spy.Buffer, target_buffer: spy.Buffer, loss_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
@@ -114,10 +114,10 @@ class FeatureGridPipeline(BaseFeatureGridPipeline):
             cmd.dispatch(thread_count=(sample_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
-    
+
     def optimize(self, feature_grid: FeatureGrid, optimizer: Optimizer):
         optimizer_states = create_buffer_32b(self.device, np.zeros(feature_grid.parameter_count, dtype=np.float32), 1)
-        
+
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
@@ -129,21 +129,21 @@ class FeatureGridPipeline(BaseFeatureGridPipeline):
             cmd.dispatch(thread_count=(feature_grid.parameter_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
-    
+
     def get_output(self, output_buffer: spy.Buffer) -> np.ndarray:
         sample_count = output_buffer.size // (self.features * 4)  # features floats per sample, 4 bytes per float
         return output_buffer.to_numpy().view(np.float32).reshape(sample_count, self.features)
 
 
 def plot_feature_grid_results(
-    original_data, 
-    pytorch_initial_output, 
+    original_data,
+    pytorch_initial_output,
     slang_initial_output,
-    pytorch_output, 
+    pytorch_output,
     slang_output,
-    pytorch_losses, 
+    pytorch_losses,
     slang_losses,
-    pytorch_params_history, 
+    pytorch_params_history,
     slang_params_history,
     initial_params,
     resolution,
@@ -152,11 +152,11 @@ def plot_feature_grid_results(
 ):
     sns.set_theme()
     sns.set_palette("pastel")
-    
+
     if len(data_shape) == 2:  # 2D case
         height, width = data_shape
         sample_count = height * width
-        
+
         # Plot results
         fig, axs = plt.subplots(2, 5, figsize=(25, 10))
         axs = axs.flatten()
@@ -217,7 +217,7 @@ def plot_feature_grid_results(
             pytorch_params_flat = pytorch_params_history[i].flatten()
             param_delta = np.mean(np.abs(pytorch_params_flat - slang_params_history[i]))
             param_deltas.append(param_delta)
-        
+
         axs[7].set_title("Parameter Deltas")
         axs[7].plot(param_deltas, label='Parameters', linewidth=2)
         axs[7].set_xlabel('Epoch')
@@ -243,7 +243,7 @@ def plot_feature_grid_results(
     elif len(data_shape) == 3:  # 3D case
         depth, height, width = data_shape
         sample_count = depth * height * width
-        
+
         # Plot results
         fig, axs = plt.subplots(2, 5, figsize=(25, 10))
         axs = axs.flatten()
@@ -252,7 +252,7 @@ def plot_feature_grid_results(
         def extract_skewed_slice(volume_data, slice_idx=None):
             if slice_idx is None:
                 slice_idx = depth // 2
-            
+
             # Create a skewed slice by taking different z-indices for different x,y positions
             slice_data = np.zeros((height, width, 3))
             for i in range(height):
@@ -261,7 +261,7 @@ def plot_feature_grid_results(
                     z_idx = int((slice_idx + i * 0.3 + j * 0.2) % depth)
                     slice_data[i, j] = volume_data[z_idx, i, j]
             return slice_data
-        
+
         skewed_slice = extract_skewed_slice(original_data)
         axs[0].set_title("Original Volume (Skewed Slice)")
         axs[0].imshow(skewed_slice)
@@ -322,7 +322,7 @@ def plot_feature_grid_results(
             pytorch_params_flat = pytorch_params_history[i].flatten()
             param_delta = np.mean(np.abs(pytorch_params_flat - slang_params_history[i]))
             param_deltas.append(param_delta)
-        
+
         axs[7].set_title("Parameter Deltas")
         axs[7].plot(param_deltas, label='Parameters', linewidth=2)
         axs[7].set_xlabel('Epoch')
@@ -348,7 +348,7 @@ def plot_feature_grid_results(
     else:  # 1D case
         # 1D plotting
         time = np.linspace(0, 1, len(original_data))
-        
+
         # Plot results
         fig, axs = plt.subplots(3, 3, figsize=(15, 15))
         axs = axs.flatten()
@@ -399,7 +399,7 @@ def plot_feature_grid_results(
         for i in range(min(len(pytorch_params_history), len(slang_params_history))):
             param_delta = np.mean(np.abs(pytorch_params_history[i] - slang_params_history[i]))
             param_deltas.append(param_delta)
-        
+
         axs[4].set_title("Parameter Deltas")
         axs[4].plot(param_deltas, label='Parameters', linewidth=2)
         axs[4].set_xlabel('Epoch')
@@ -447,5 +447,5 @@ def plot_feature_grid_results(
 
     plt.tight_layout()
     plt.show()
-    
+
     return output_delta

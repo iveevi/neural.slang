@@ -16,11 +16,13 @@ public struct InlineVector<T, int N> : IVector<T, N>
     public __init() {}
     
     public __init(int value) {
+        [ForceUnroll]
         for (int i = 0; i < N; i++)
             data[i] = T(value);
     }
     
     public __init(T value) {
+        [ForceUnroll]
         for (int i = 0; i < N; i++)
             data[i] = value;
     }
@@ -360,6 +362,33 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     )
     {
         dv = DifferentialPair<vector<T, N>>(dv.p, doutput.toVector());
+    }
+
+    // Slicing
+    [BackwardDerivative(sliceBwd)]
+    public InlineVector<T, M> slice<int K, int M>()
+    {
+        static_assert(K >= 0 && M + K <= N, "Invalid slice!");
+
+        var result = InlineVector<T, M>();
+        [ForceUnroll]
+        for (int i = 0; i < M; i++)
+            result.data[i] = data[i + K];
+
+        return result;
+    }
+
+    public static void sliceBwd<int K, int M>(
+        inout DifferentialPair<This> dthis,
+        InlineVector<T, M>.Differential doutput
+    )
+    {
+        var d = dthis.d;
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+            d[i + K] += doutput[i];
+
+        dthis = DifferentialPair<This>(dthis.p, d);
     }
 }
 
