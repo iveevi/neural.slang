@@ -21,13 +21,13 @@ public struct InlineVector<T, int N> : IVector<T, N>
             data[i] = T(value);
     }
     
-    public __init(T value) {
+    no_diff public __init(T value) {
         [ForceUnroll]
         for (int i = 0; i < N; i++)
             data[i] = value;
     }
 
-    public __init(T[N] data) { this.data = data; }
+    no_diff public __init(T[N] data) { this.data = data; }
 
     public __init(This other) { this.data = other.data; }
 

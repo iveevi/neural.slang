@@ -128,8 +128,8 @@ public struct Scene : IBoundedSignedDistanceField
 
     public float skip(Ray ray)
     {
-        if (let t = box.intersection(ray))
-            return t + 1e-3;
+        if (let intx = box.intersection(ray))
+            return intx.t + 1e-3;
         else
             return 0.0;
     }
@@ -169,6 +169,8 @@ void render_normal(uint3 tid : SV_DispatchThreadID)
     float3 color = 0.5 * intx.n + 0.5;
     targetTexture.Store(tid.xy, float4(color, 1));
 }
+
+// TODO: eval method outside...
 
 // Backward pass
 [BackwardDifferentiable]

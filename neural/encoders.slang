@@ -121,7 +121,7 @@ public struct OneBlobEncoder<T, int N, int K> : IEncoder<T, N, N * K>
     public static const int In = N;
     public static const int Out = N * K;
 
-    [BackwardDifferentiable]
+    [BackwardDerivative(evalBwd)]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
         where InputVector : IVector<T, N>
         where OutputVector : IVector<T, N * K>
@@ -136,12 +136,39 @@ public struct OneBlobEncoder<T, int N, int K> : IEncoder<T, N, N * K>
             for (int j = 0; j < K; j++)
             {
                 let x = T(j) / T(K - 1);
-                let k = exp(-(s - x) * (s - x) / (T(K) * T(K)));
+                let diff = s - x;
+                let k = exp(-diff * diff / (T(K) * T(K)));
                 output[i * K + j] = k;
             }
         }
 
         return output;
+    }
+
+    void evalBwd<InputVector, OutputVector>(inout DifferentialPair<InputVector> dinput, OutputVector.Differential doutput)
+        where InputVector : IVector<T, N>
+        where OutputVector : IVector<T, N * K>
+    {
+        let p = __slang_noop_cast<InputVector>(dinput.p);
+        var d = __slang_noop_cast<InputVector>(dinput.d);
+        let dout = __slang_noop_cast<OutputVector>(doutput);
+
+        [ForceUnroll]
+        for (int i = 0; i < N; i++)
+        {
+            let s = p[i];
+            [ForceUnroll]
+            for (int j = 0; j < K; j++)
+            {
+                let x = T(j) / T(K - 1);
+                let diff = s - x;
+                let k = exp(-diff * diff / (T(K) * T(K)));
+                let dk = dout[i * K + j];
+                d[i] += dk * k * (-T(2.0) * diff) / (T(K) * T(K));
+            }
+        }
+
+        dinput = DifferentialPair<InputVector>(p, __slang_noop_cast<InputVector.Differential>(d));
     }
 }
 

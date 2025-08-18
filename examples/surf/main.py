@@ -1,19 +1,15 @@
-from ..networks.addresses import Network, TrainingPipeline
+from ..ngp import AddressBasedMLP, MLP, Adam, Optimizer, DenseGrid
 from ..util import *
+from PIL import Image
 from common import *
 from dataclasses import dataclass
 from typing import Any
 import numpy as np
 import slangpy as spy
 import trimesh
-from PIL import Image
 
 
 HERE = ROOT / "examples" / "surf"
-
-
-# TODO: automatically generate slang source for training pipeline based on
-# main.slang (reflection on the network paramter block)
 
 
 @dataclass
@@ -32,20 +28,19 @@ class Cylinder:
 
 class RenderingPipeline:
     @staticmethod
-    def load_specialization_module(device: spy.Device, network: Network):
+    def load_specialization_module(device: spy.Device, mlp: MLP):
         source = f"""
-        export static const int Hidden = {network.hidden};
-        export static const int HiddenLayers = {network.hidden_layers};
-        export static const int Levels = {network.levels};
+        export static const int Hidden = {mlp.hidden};
+        export static const int HiddenLayers = {mlp.hidden_layers};
         """
         return device.load_module_from_source("specialization", source)
 
-    def __init__(self, device: spy.Device, network: Network):
+    def __init__(self, device: spy.Device, mlp: MLP):
         SOURCE = HERE / "slang" / "main.slang"
         
         self.device = device
         self.module = device.load_module(str(SOURCE))
-        self.specialization_module = self.load_specialization_module(device, network)
+        self.specialization_module = self.load_specialization_module(device, mlp)
         
         self.network_type = self.module.layout.find_type_by_name("network")
         print("network_type", self.network_type)
@@ -55,6 +50,11 @@ class RenderingPipeline:
         
         # Backward pass pipeline
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
+
+        # Optimization pipeline
+        self.update_mlp_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_mlp")
+        self.update_grid1_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid1")
+        self.update_grid2_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid2")
 
         # Reference pipeline
         reference_program = device.link_program(
@@ -101,7 +101,7 @@ class RenderingPipeline:
             input_layout=input_layout,
             primitive_topology=spy.PrimitiveTopology.triangle_list,
             targets=[
-                { "format": spy.Format.rgba8_unorm },
+                { "format": spy.Format.rgba32_float },
             ],
             depth_stencil={
                 "format": spy.Format.d32_float,
@@ -111,38 +111,58 @@ class RenderingPipeline:
             }
         )
 
-    def render_neural(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture, cylinder: Cylinder):
+    def render_neural(self, mlp: MLP, grid1: DenseGrid, grid2: DenseGrid, rayframe: RayFrame, target_texture: spy.Texture, cylinder: Cylinder, show_half: bool):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_neural_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.network = network.dict()
+            cursor.mlp = mlp.dict()
+            cursor.grid1 = grid1.dict()
+            cursor.grid2 = grid2.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
             cursor.cylinder = cylinder.dict()
+            cursor.showHalf = show_half
             cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
             
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def backward(self, network: Network, rayframe: RayFrame, target_texture: spy.Texture, cylinder: Cylinder, loss_buffer: spy.Buffer):
+    def backward(self,
+                 mlp: MLP,
+                 grid1: DenseGrid,
+                 grid2: DenseGrid,
+                 rayframe: RayFrame,
+                 target_texture: spy.Texture,
+                 cylinder: Cylinder,
+                 loss_buffer: spy.Buffer,
+                 boost: float):
         command_encoder = self.device.create_command_encoder()
         
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.backward_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.network = network.dict()
+            cursor.mlp = mlp.dict()
+            cursor.grid1 = grid1.dict()
+            cursor.grid2 = grid2.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
             cursor.lossBuffer = loss_buffer
             cursor.cylinder = cylinder.dict()
+            cursor.boost = boost
             cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
             
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def render_reference(self, camera: Camera, mesh: TriangleMesh, target: tuple[spy.Texture, spy.TextureView], depth_target: spy.TextureView, diffuse_texture: spy.Texture, sampler: spy.Sampler):
+    def render_reference(self,
+                         camera: Camera,
+                         mesh: TriangleMesh,
+                         target: tuple[spy.Texture, spy.TextureView],
+                         depth_target: spy.TextureView,
+                         diffuse_texture: spy.Texture,
+                         sampler: spy.Sampler):
         render_pass_args: Any = {
             "color_attachments": [
                 {
@@ -191,21 +211,73 @@ class RenderingPipeline:
             
         self.device.submit_command_buffer(command_encoder.finish())
 
+    def update_mlp(self, mlp: MLP, optimizer: Optimizer, optimizer_states: spy.Buffer):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.update_mlp_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp.dict()
+            cursor.optimizer = optimizer.dict()
+            cursor.optimizerStates = optimizer_states
+            cmd.dispatch(thread_count=(mlp.parameter_count, 1, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def update_grid1(self, grid1: DenseGrid, optimizer: Optimizer, optimizer_states: spy.Buffer):
+        command_encoder = self.device.create_command_encoder()
+        
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.update_grid1_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.grid1 = grid1.dict()
+            cursor.optimizer = optimizer.dict()
+            cursor.optimizerStates = optimizer_states
+            cmd.dispatch(thread_count=(grid1.parameter_count, 1, 1))
+            
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def update_grid2(self, grid2: DenseGrid, optimizer: Optimizer, optimizer_states: spy.Buffer):
+        command_encoder = self.device.create_command_encoder()
+        
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.update_grid2_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.grid2 = grid2.dict()
+            cursor.optimizer = optimizer.dict()
+            cursor.optimizerStates = optimizer_states
+            cmd.dispatch(thread_count=(grid2.parameter_count, 1, 1))
+            
+        self.device.submit_command_buffer(command_encoder.finish())
+
+
+
+def alloc_target_texture(device: spy.Device, width: int, height: int):
+    texture = device.create_texture(
+        type=spy.TextureType.texture_2d,
+        format=spy.Format.rgba32_float,
+        width=width,
+        height=height,
+        usage=spy.TextureUsage.shader_resource
+            | spy.TextureUsage.unordered_access
+            | spy.TextureUsage.render_target,
+    )
+    view = texture.create_view()
+    return texture, view
+
 
 def main():
     device = create_device()
+
+    optimizer = Adam(alpha=1e-2)
+    mlp = AddressBasedMLP.new(device, hidden=16, hidden_layers=3, input=8, output=3)
+    grid1 = DenseGrid.new(device, dimension=2, features=4, resolution=64)
+    grid2 = DenseGrid.new(device, dimension=2, features=4, resolution=128)
+    mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
+    grid1_optimizer_states = grid1.alloc_optimizer_states(device, optimizer)
+    grid2_optimizer_states = grid2.alloc_optimizer_states(device, optimizer)
     
-    network = Network(
-        device,
-        hidden=32,
-        hidden_layers=4,
-        levels=0,
-        input=7,
-        output=3,
-    )
-    
-    rendering_pipeline = RenderingPipeline(device, network)
-    training_pipeline = TrainingPipeline(device, network)
+    rendering_pipeline = RenderingPipeline(device, mlp)
     
     assert device.has_feature(spy.Feature.rasterization)
     
@@ -222,7 +294,7 @@ def main():
     # Calculate bounding cylinder (vertical orientation - Y axis is height)
     vertices = geometry.vertices.astype(np.float32)
     relative_vertices = vertices - mesh_center
-    cylinder_radius = np.max(np.sqrt(relative_vertices[:, 0]**2 + relative_vertices[:, 2]**2))
+    cylinder_radius = np.max(np.sqrt(relative_vertices[:, 0] ** 2 + relative_vertices[:, 2] ** 2))
     cylinder_height = mesh_bounds[1][1] - mesh_bounds[0][1]
     
     print(f"Mesh center: {mesh_center}")
@@ -232,29 +304,29 @@ def main():
     
     mesh = TriangleMesh.new(device, geometry)
     
-    show_reference = False
+    # show_reference = False
+
+    show_mode = 0
+    show_reference = 0
+    show_neural = 1
+    show_side_by_side = 2
+
+    pause_orbit = False
     
     def keyboard_hook(event: spy.KeyboardEvent):
         if event.type == spy.KeyboardEventType.key_press:
             if event.key == spy.KeyCode.tab:
-                nonlocal show_reference
-                show_reference = not show_reference
-    
+                nonlocal show_mode
+                show_mode = (show_mode + 1) % 3
+            if event.key == spy.KeyCode.space:
+                nonlocal pause_orbit
+                pause_orbit = not pause_orbit
+
     app = App(device, keyboard_hook=keyboard_hook)
     
-    texture = device.create_texture(
-        type=spy.TextureType.texture_2d,
-        format=spy.Format.rgba8_unorm,
-        width=256,
-        height=256,
-        usage=spy.TextureUsage.shader_resource
-            | spy.TextureUsage.unordered_access
-            | spy.TextureUsage.render_target,
-        data=None,
-    )
+    texture, texture_view = alloc_target_texture(device, 512, 512)
+    train_texture, train_texture_view = alloc_target_texture(device, 256, 256)
 
-    # TODO: multiple lower resolution target textures for backward pass
-    
     depth_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.d32_float,
@@ -263,6 +335,8 @@ def main():
         usage=spy.TextureUsage.depth_stencil,
         data=None,
     )
+
+    depth_texture_view = depth_texture.create_view()
     
     # Load texture
     texture_image = Image.open(ROOT / "resources" / "spinosa_albedo.jpg")
@@ -297,55 +371,84 @@ def main():
     
     loss_buffer = create_buffer_32b(device, np.zeros((app.width * app.height,), dtype=np.float32))
     
-    history: list[float] = []
-
-    # TODO: toggle with 'tab' key
-
-    texture_view = texture.create_view()
-    frame_views = dict()
-
+    history = []
+    counter = 0
     bound = Cylinder(mesh_center, cylinder_radius, cylinder_height)
-    
-    def loop(frame: Frame):
-        frame_view = None
-        if frame.image not in frame_views:
-            frame_view = frame.image.create_view()
-            frame_views[id(frame.image)] = frame_view
-        else:
-            frame_view = frame_views[id(frame.image)]
 
-        time = frame.count[0] * 0.01
-        
-        # Orbit around the calculated mesh centroid
+    def set_orbit_camera(time: float):
         orbit_radius = mesh_size * 1.2  # Orbit radius based on mesh size
-        camera.transform.position = mesh_center + orbit_radius * np.array((np.cos(time), 0.2, np.sin(time)))
+        camera.transform.position = mesh_center + orbit_radius * np.array(
+            (np.cos(time),
+            0.2 * np.sin(3 * time),
+            np.sin(time))
+        )
         camera.transform.look_at(mesh_center)
 
-        # TODO: take samples from random points in the orbit
-        
-        # Reference rendering
-        rendering_pipeline.render_reference(
-            camera,
-            mesh,
-            (texture, texture_view),
-            depth_texture.create_view(),
-            diffuse_texture,
-            sampler,
-        )
-        
-        # Backward pass
-        rendering_pipeline.backward(network, camera.rayframe(), texture, bound, loss_buffer)
-        
+    orbit_third = 2 * np.pi / 3
+    
+    def loop(frame: Frame):
+        nonlocal counter
+        time = counter * 0.01
+        if not pause_orbit:
+            counter += 1
+
+        samples = 3
+        shifts = np.linspace(0, 2 * np.pi, samples)
+        noise = 0.1 * (2 * np.random.rand(samples) - 1) / samples
+        shifts += noise
+
+        for shift in shifts:
+            set_orbit_camera(time + shift)
+
+            # Reference rendering for training
+            rendering_pipeline.render_reference(
+                camera,
+                mesh,
+                (train_texture, train_texture_view),
+                depth_texture_view,
+                diffuse_texture,
+                sampler,
+            )
+
+            device.wait_for_idle()
+            
+            # Backward pass
+            boost = 1.0 / (samples * train_texture.width * train_texture.height)
+            rendering_pipeline.backward(mlp, grid1, grid2, camera.rayframe(), train_texture, bound, loss_buffer, boost)
+            
+            device.wait_for_idle()
+
+        # Optimize
+        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
+        rendering_pipeline.update_grid1(grid1, optimizer, grid1_optimizer_states)
+        rendering_pipeline.update_grid2(grid2, optimizer, grid2_optimizer_states)
+    
         loss_data = loss_buffer.to_numpy().view(np.float32)
         loss = loss_data.mean()
         history.append(loss)
         
-        # Neural rendering
-        if not show_reference:
-            rendering_pipeline.render_neural(network, camera.rayframe(), texture, bound)
-        
-        # Optimize
-        training_pipeline.optimize(network)
+        # Rendering
+        set_orbit_camera(time)
+
+        if show_mode == show_reference or show_mode == show_side_by_side:
+            rendering_pipeline.render_reference(
+                camera,
+                mesh,
+                (texture, texture_view),
+                depth_texture_view,
+                diffuse_texture,
+                sampler,
+            )
+        if show_mode == show_neural or show_mode == show_side_by_side:
+            rendering_pipeline.render_neural(
+                mlp,
+                grid1,
+                grid2,
+                camera.rayframe(),
+                texture,
+                bound,
+                show_mode == show_side_by_side,
+            )
         
         # Display
         frame.blit(texture)
@@ -359,9 +462,8 @@ def main():
     import matplotlib.pyplot as plt
     sns.set_theme()
     sns.set_palette("pastel")
-    history_array = np.array(history)
-    sns.lineplot(history_array, alpha=0.5, color="green")
-    sns.lineplot(gaussian_filter(history_array, 5), linewidth=2.5, color="green")
+    sns.lineplot(history, alpha=0.5, color="green")
+    sns.lineplot(gaussian_filter(history, 5), linewidth=2.5, color="green")
     plt.yscale("log")
     plt.show()
 

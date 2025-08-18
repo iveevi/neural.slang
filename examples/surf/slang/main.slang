@@ -4,10 +4,14 @@ import network_with_addresses;
 import shapes;
 import cmap;
 
+import mlp;
+import dense_grid;
+
 // Rendering the reference
 struct VertexResult
 {
     float4 position : SV_Position;
+    float3 worldPosition : POSITION;
     float3 worldNormal : NORMAL;
     float2 uv : TEXCOORD0;
 }
@@ -26,6 +30,7 @@ VertexResult reference_vertex(float3 position : POSITION, float3 normal : NORMAL
     float4 view_pos = mul(view, hom);
     result.position = mul(perspective, view_pos);
     
+    result.worldPosition = position;
     result.worldNormal = normal;
     result.uv = uv;
     
@@ -54,95 +59,92 @@ extern static const int Hidden;
 extern static const int HiddenLayers;
 extern static const int Levels;
 
-// typealias Encoder = FrequencyEncoder<float, 3, Levels>;
-typealias Encoder = IdentityEncoder<float, 7>;
-
-// TODO: IMLP<float, Encoder.Out, 3>
-typealias Network = NetworkWithAddresses<
-    Encoder.In, 3, Encoder.Out,
-    Hidden, HiddenLayers,
-    Encoder,
-    ReLU<float>,
->;
+typealias MLP = AddressBasedMLP<8, 3, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
+typealias Grid1 = DenseGrid<2, 4>;
+typealias Grid2 = DenseGrid<2, 4>;
 
 uniform RayFrame rayFrame;
 uniform RWTexture2D targetTexture;
 uniform uint2 targetResolution;
 uniform Cylinder cylinder;
+uniform bool showHalf;
+uniform float boost;
 
-ParameterBlock<Network> network;
+ParameterBlock<MLP> mlp;
+ParameterBlock<Grid1> grid1;
+ParameterBlock<Grid2> grid2;
 
 [BackwardDifferentiable]
 float3 render(
-    Network.Parameters parameters,
-    Network.Configuration configuration,
-    no_diff float3 c,
-    no_diff float3 rayDirection
+    MLP.Parameters parameters,
+    Grid1.Parameters gridParameters1,
+    Grid2.Parameters gridParameters2,
+    no_diff CylinderCoordinates c1,
+    no_diff CylinderCoordinates c2,
 )
 {
-    // c contains cylindrical coordinates: (r, theta, y)
-    // where r is normalized radius, theta is angle, y is normalized height
-    
-    // Calculate surface normal at intersection point (outward pointing)
-    // For a cylinder, the normal is radial in the xz plane
-    let surfaceNormal = float3(cos(c.y), 0.0, sin(c.y));
-    
-    // Create normal frame at intersection point
-    // Normal: outward radial direction
-    // Tangent: tangent to cylinder surface (perpendicular to normal in xz plane)
-    // Bitangent: vertical direction (y-axis)
-    let normal = surfaceNormal;
-    let tangent = float3(-sin(c.y), 0.0, cos(c.y));  // perpendicular to normal in xz plane
-    let bitangent = float3(0.0, 1.0, 0.0);  // vertical direction
-    
-    // Invert the ray direction (from intersection point toward camera)
-    let invertedRay = -rayDirection;
-    
-    // Transform inverted ray to normal frame coordinates
-    let rayInNormalFrame = float3(
-        dot(invertedRay, tangent),
-        dot(invertedRay, bitangent), 
-        dot(invertedRay, normal)
-    );
-    
-    // Calculate spherical angles in normal frame
-    // Polar angle: angle from normal (z-axis in normal frame)
-    let cosTheta = rayInNormalFrame.z / length(rayInNormalFrame);
-    let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-    
-    // Azimuthal angle: angle around normal in tangent-bitangent plane
-    let cosPhi = rayInNormalFrame.x / length(rayInNormalFrame.xy);
-    let sinPhi = rayInNormalFrame.y / length(rayInNormalFrame.xy);
-    
-    // // Prepare 4-component input vector:
-    // // 1. sin(angular) component from cylindrical coordinates
-    // // 2. vertical component from cylindrical coordinates  
-    // // 3. sin(polar angle) of inverted ray in normal frame
-    // // 4. sin(azimuthal angle) of inverted ray in normal frame
-    // let cc = float4(
-    //     sin(c.y),    // sin(theta) from cylindrical coordinates
-    //     c.z,         // vertical component (normalized height)
-    //     sinTheta,    // sin(polar angle) of inverted ray
-    //     sinPhi       // sin(azimuthal angle) of inverted ray
-    // );
+    var gridInput1 = InlineVector<float, 2>.fromVector(0.0);
+    gridInput1[0] = c1.normalizedTheta();
+    gridInput1[1] = c1.y;
 
-    // return HSV(0.0, 1.0).eval(0.5 * cc.w + 0.5);
+    let feature1 = grid1.eval(gridParameters1, grid1.configuration, gridInput1);
 
-    float[7] cc = float[7](
-        sin(c.y),
-        cos(c.y),
-        c.z,
-        sinTheta,
-        cosTheta,
-        sinPhi,
-        cosPhi,
-    );
-    
-    return Network.eval(
-        parameters,
-        configuration,
-        Network.InputVec(cc)
-    ).toVector();
+    var gridInput2 = InlineVector<float, 2>.fromVector(0.0);
+    gridInput2[0] = c2.normalizedTheta();
+    gridInput2[1] = c2.y;
+
+    let feature2 = grid2.eval(gridParameters2, grid2.configuration, gridInput2);
+
+    // return feature1.slice<0, 3>().toVector().add(feature2.slice<0, 3>().toVector());
+
+    let input = concat<
+        InlineVector<float, 8>,
+        InlineVector<float, 4>,
+        InlineVector<float, 4>,
+        float, 4, 4
+    >(feature1, feature2);
+
+    // let encoder = FrequencyEncoder<float, 4, 8>();
+
+    // var combined = InlineVector<float, 4>(0.0);
+    // combined[0] = 2.0 * c1.normalizedTheta();
+    // combined[1] = 2.0 * c2.normalizedTheta();
+    // combined[2] = c1.y;
+    // combined[3] = c2.y;
+
+    // let input = encoder.eval<
+    //     InlineVector<float, 4>,
+    //     InlineVector<float, 64>
+    // >(combined);
+
+    return MLP.eval(parameters, input).toVector();
+}
+
+struct DoubleIntersection
+{
+    CylinderCoordinates c1;
+    CylinderCoordinates c2;
+}
+
+Optional<DoubleIntersection> intersections(Ray ray)
+{
+    let intx1 = cylinder.intersection(ray);
+    if (!intx1.hasValue)
+        return {};
+
+    // From now always return a valid double intersection
+    CylinderCoordinates c1;
+    CylinderCoordinates c2;
+
+    c1 = cylinder.toCylindrical(intx1.value.point);
+
+    let intx2 = cylinder.intersection(ray);
+    if (intx2.hasValue)
+        c2 = cylinder.toCylindrical(intx2.value.point);
+    else
+        c2 = c1;
+
+    return DoubleIntersection(c1, c2);
 }
 
 [shader("compute")]
@@ -150,18 +152,25 @@ float3 render(
 void render_neural(uint3 tid : SV_DispatchThreadID)
 {
     float2 uv = (tid.xy + 0.5) / targetResolution;
+    uv.y = 1.0 - uv.y;  // Flip Y to match rasterization coordinate system
+    float3 color = float3(0.0, 0.0, 0.0);
+
+    if (showHalf && uv.x < 0.5)
+        return;
     
     let ray = rayFrame.rayAt(uv);
-    let intx = cylinder.intersection(ray);
+    let dintx = intersections(ray);
 
-    var color = float3(0.0, 0.0, 0.0);
-    if (let x = intx)
+    if (dintx.hasValue)
     {
-        let cylindricalCoords = cylinder.toCylindrical(x);
-        color = render(network.parameterStorage(), network.addresses(), cylindricalCoords, ray.direction);
-        // let ntheta = (cylindricalCoords.y + float.getPi()) / (2.0 * float.getPi());
-        // let hsv = HSV(0.0, 1.0);
-        // color = hsv.eval(cylindricalCoords.z);
+        let c1 = dintx.value.c1;
+        let c2 = dintx.value.c2;
+
+        color = render(mlp.parameters, grid1.parameters, grid2.parameters, c1, c2);
+    }
+    else
+    {
+        color = float3(0.0, 0.0, 0.0);
     }
 
     targetTexture[tid.xy] = float4(color, 1.0);
@@ -173,18 +182,19 @@ uniform RWStructuredBuffer<float> lossBuffer;
 
 [BackwardDifferentiable]
 float loss(
-    Network.Parameters parameters,
-    Network.Configuration configuration,
-    no_diff float3 cylindricalCoords,
-    no_diff float3 direction,
+    MLP.Parameters parameters,
+    Grid1.Parameters gridParameters1,
+    Grid2.Parameters gridParameters2,
+    no_diff CylinderCoordinates c1,
+    no_diff CylinderCoordinates c2,
     no_diff float3 expected
 )
 {
-    let color = render(parameters, configuration, cylindricalCoords, direction);
+    let color = render(parameters, gridParameters1, gridParameters2, c1, c2);
     let mse = MeanSquaredError<float>();
     return mse.eval(
-        Network.OutputVec.fromVector(color),
-        Network.OutputVec.fromVector(expected),
+        MLP.OutputVec.fromVector(color),
+        MLP.OutputVec.fromVector(expected),
     );
 }
 
@@ -192,33 +202,71 @@ float loss(
 [numthreads(32, 1, 1)]
 void backward(uint3 tid : SV_DispatchThreadID)
 {
-    let uv = float2(tid.xy + 0.5) / targetResolution;
+    var uv = float2(tid.xy + 0.5) / targetResolution;
+    uv.y = 1.0 - uv.y;  // Flip Y to match rasterization coordinate system
 
     let ray = rayFrame.rayAt(uv);
-    let intx = cylinder.intersection(ray);
+    let dintx = intersections(ray);
 
-    if (!intx.hasValue)
+    if (!dintx.hasValue)
         return;
 
-    let cylindricalCoords = cylinder.toCylindrical(intx.value);
+    let c1 = dintx.value.c1;
+    let c2 = dintx.value.c2;
+
     let expected = targetTexture[tid.xy].rgb;
 
     bwd_diff(loss)(
-        network.parameterStorageDiff(),
-        network.addresses(),
-        cylindricalCoords,
-        ray.direction,
+        mlp.dual,
+        grid1.dual,
+        grid2.dual,
+        c1,
+        c2,
         expected,
-        1.0
+        boost
     );
 
     let index = tid.y * targetResolution.x + tid.x;
     
     lossBuffer[index] = loss(
-        network.parameterStorage(),
-        network.addresses(),
-        cylindricalCoords,
-        ray.direction,
+        mlp.parameters,
+        grid1.parameters,
+        grid2.parameters,
+        c1,
+        c2,
         expected
     );
+}
+
+// Optimization
+typealias Optimizer = Adam<float>;
+
+uniform Optimizer optimizer;
+uniform RWStructuredBuffer<Optimizer.State> optimizerStates;
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void update_mlp(uint3 tid : SV_DispatchThreadID)
+{
+    mlp.update(optimizer, optimizerStates[tid.x], tid.x);
+}
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void update_grid1(uint3 tid : SV_DispatchThreadID)
+{
+    if (isnan(grid1.gradients.buffer[tid.x]))
+        return;
+
+    grid1.update(optimizer, optimizerStates[tid.x], tid.x);
+}
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void update_grid2(uint3 tid : SV_DispatchThreadID)
+{
+    if (isnan(grid2.gradients.buffer[tid.x]))
+        return;
+
+    grid2.update(optimizer, optimizerStates[tid.x], tid.x);
 }

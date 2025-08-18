@@ -38,16 +38,17 @@ class Camera:
     def rayframe(self) -> RayFrame:
         normalize = lambda x: x / np.linalg.norm(x)
         
-        _, up, forward = self.transform.axes()
+        right, up, forward = self.transform.axes()
         
         vfov = np.radians(self.fov)
         h = np.tan(vfov / 2)
         vheight = 2 * h
         vwidth = vheight * self.aspect_ratio
         
-        w = normalize(-forward)
-        u = normalize(np.cross(up, w))
-        v = np.cross(w, u)
+        # Use the same coordinate system as view matrix
+        w = normalize(-forward)  # Camera looks in negative forward direction
+        u = normalize(np.cross(up, w))  # Right vector
+        v = np.cross(w, u)  # Up vector in camera space
 
         horizontal = u * vwidth
         vertical = v * vheight
