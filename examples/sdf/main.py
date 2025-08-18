@@ -139,7 +139,7 @@ def main():
     sdf_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
     loss_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
 
-    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "spot.obj"))
+    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "bunny.obj"))
     mesh_sdf = pv.MeshSDF(mesh_obj)
 
     def target_sdf(samples: np.ndarray) -> np.ndarray:
@@ -220,6 +220,8 @@ def main():
     app.run(loop)
 
     # Plot loss
+    sns.set_theme()
+    sns.set_palette("pastel")
     sns.lineplot(history, alpha=0.5, color="green")
     sns.lineplot(gaussian_filter(history, 5), linewidth=2.5, label="Slang", color="green")
     sns.lineplot(alphas, alpha=0.5, color="blue")

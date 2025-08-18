@@ -216,6 +216,7 @@ def main():
     # Calculate mesh properties for camera positioning
     mesh_center = geometry.centroid.astype(np.float32)
     mesh_bounds = geometry.bounds
+    print("mesh_bounds", mesh_bounds)
     mesh_size = np.linalg.norm(mesh_bounds[1] - mesh_bounds[0])
     
     # Calculate bounding cylinder (vertical orientation - Y axis is height)
@@ -356,7 +357,8 @@ def main():
     import seaborn as sns
     from scipy.ndimage import gaussian_filter
     import matplotlib.pyplot as plt
-    import os
+    sns.set_theme()
+    sns.set_palette("pastel")
     history_array = np.array(history)
     sns.lineplot(history_array, alpha=0.5, color="green")
     sns.lineplot(gaussian_filter(history_array, 5), linewidth=2.5, color="green")
