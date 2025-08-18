@@ -14,6 +14,47 @@ class TriangleMesh:
     triangle_count: int
     vertex_count: int
 
+    def blas(self, device: spy.Device):
+        blas_geometry_desc = spy.AccelerationStructureBuildInputTriangles()
+        blas_geometry_desc.flags = spy.AccelerationStructureGeometryFlags.opaque
+        blas_geometry_desc.vertex_buffers = [ spy.BufferOffsetPair(self.vertices) ]
+        blas_geometry_desc.vertex_format = spy.Format.rgb32_float
+        blas_geometry_desc.vertex_count = self.vertex_count
+        blas_geometry_desc.vertex_stride = 3 * 4
+        blas_geometry_desc.index_buffer = self.triangles
+        blas_geometry_desc.index_format = spy.IndexFormat.uint32
+        blas_geometry_desc.index_count = 3 * self.triangle_count
+
+        blas_build_desc = spy.AccelerationStructureBuildDesc()
+        blas_build_desc.inputs = [ blas_geometry_desc ]
+
+        blas_sizes = device.get_acceleration_structure_sizes(blas_build_desc)
+
+        blas_scratch_buffer = device.create_buffer(
+            size=blas_sizes.scratch_size,
+            usage=spy.BufferUsage.unordered_access,
+        )
+
+        blas_buffer = device.create_buffer(
+            size=blas_sizes.acceleration_structure_size,
+            usage=spy.BufferUsage.acceleration_structure,
+        )
+
+        blas = device.create_acceleration_structure(
+            size=blas_buffer.size,
+        )
+
+        command_encoder = device.create_command_encoder()
+        command_encoder.build_acceleration_structure(
+            desc=blas_build_desc,
+            dst=blas,
+            src=None,
+            scratch_buffer=blas_scratch_buffer,
+        )
+        device.submit_command_buffer(command_encoder.finish())
+        
+        return blas
+
     @staticmethod
     def new(device: spy.Device, mesh: trimesh.Trimesh):
         vertices = create_buffer_32b(

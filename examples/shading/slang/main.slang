@@ -9,10 +9,6 @@ import dense_grid;
 
 extern static const int Hidden;
 extern static const int HiddenLayers;
-extern static const int Levels;
-
-typealias MLP = AddressBasedMLP<3, 3, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
-typealias Grid = DenseGrid<3, 3>;
 
 // Rendering the reference
 struct VertexResult
@@ -44,26 +40,78 @@ VertexResult reference_vertex(float3 position : POSITION, float3 normal : NORMAL
     return result;
 }
 
+uniform RaytracingAccelerationStructure blas;
+
+float rand(inout float seed)
+{
+    static const let sqrt2 = sqrt(2.0);
+    seed = fmod(seed * sqrt2, 1.0);
+    return seed;
+}
+
+struct AreaLight
+{
+    float3 center;
+    float3 horizontal;
+    float3 vertical;
+    float3 color;
+
+    float3 sample(inout float seed)
+    {
+        float2 uv = float2(rand(seed), rand(seed));
+        return center + (uv.x - 0.5) * horizontal + (uv.y - 0.5) * vertical;
+    }
+}
+
+uniform Texture2D seedTexture;
+uniform SamplerState seedSampler;
+uniform float time;
+
 [shader("fragment")]
 float4 reference_fragment(VertexResult input) : SV_Target
 {
+    float seed = fmod(seedTexture.Sample(seedSampler, input.uv).r + 13.4234 * time, 1.0);
     float3 albedo = diffuseTexture.Sample(diffuseSampler, input.uv).rgb;
-    
-    // Simple directional light
-    float3 lightDir = normalize(float3(1.0, 1.0, 1.0));
     float3 normal = normalize(input.worldNormal);
     
-    // Lambertian shading
-    float ndotl = max(dot(normal, lightDir), 0.0);
-    float3 ambient = albedo * 0.1;
-    float3 diffuse = albedo * ndotl * 0.9;
-    
-    return float4(ambient + diffuse, 1.0);
+    // Area light from the top
+    let light = AreaLight(
+        float3(0.0, 7.0, 0.0),
+        float3(1.0, 0.0, 0.0) * 5,
+        float3(0.0, 0.0, 1.0) * 5,
+        float3(2.0, 2.0, 1.8) * 2,
+    );
+
+    // Ray casting for shadows
+    let offset = input.worldPosition + 1e-3 * normal;
+    let sample = light.sample(seed);
+
+    RayDesc ray;
+    ray.Origin = offset;
+    ray.Direction = normalize(sample - offset);
+    ray.TMin = 1e-3;
+    ray.TMax = 10.0;
+
+    // Ray tracing for shadows
+    RayQuery<
+        RAY_FLAG_FORCE_OPAQUE
+        | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES
+        | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+    > query;
+
+    query.TraceRayInline(blas, 0, 0xff, ray);
+    query.Proceed();
+
+    float shadow = query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
+    float ndotl = max(dot(normal, ray.Direction), 0.0);
+
+    return float4(float3(shadow) * light.color * albedo * ndotl, 1.0);
 }
 
 struct GBuffer
 {
     float3 position : SV_Target0;
+    // TODO: albedo as well
 }
 
 [shader("fragment")]
@@ -80,6 +128,9 @@ static const let bound = Box(float3(-1.0), float3(1.0));
 ParameterBlock<MLP> mlp;
 ParameterBlock<Grid> grid;
 
+typealias MLP = AddressBasedMLP<8, 3, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
+typealias Grid = DenseGrid<3, 8>;
+
 [BackwardDifferentiable]
 InlineVector<float, 3> shade(
     Grid.Parameters gridParameters,
@@ -87,8 +138,10 @@ InlineVector<float, 3> shade(
     float3 position
 )
 {
+    let encoder = FrequencyEncoder<float, 3, 8>();
     let input = InlineVector<float, 3>.fromVector(bound.normalized(position));
     let feature = Grid.eval(gridParameters, grid.configuration, input);
+    // let encoded = encoder.eval<InlineVector<float, 3>, InlineVector<float, 48>>(input);
     let output = MLP.eval(mlpParameters, feature);
     return output;
 }

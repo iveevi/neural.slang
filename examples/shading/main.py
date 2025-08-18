@@ -146,10 +146,14 @@ class RenderingPipeline:
     def render_reference(self,
                          camera: Camera,
                          mesh: TriangleMesh,
+                         blas: spy.AccelerationStructure,
                          target: tuple[spy.Texture, spy.TextureView],
                          depth_target: spy.TextureView,
                          diffuse_texture: spy.Texture,
-                         sampler: spy.Sampler):
+                         sampler: spy.Sampler,
+                         seed_texture: spy.Texture,
+                         seed_sampler: spy.Sampler,
+                         time: float):
         render_pass_args: Any = self.create_render_pass_args(target, depth_target)
         
         command_encoder = self.device.create_command_encoder()
@@ -162,6 +166,10 @@ class RenderingPipeline:
             cursor.perspective = camera.perspective_matrix()
             cursor.diffuseTexture = diffuse_texture
             cursor.diffuseSampler = sampler
+            cursor.blas = blas
+            cursor.seedTexture = seed_texture
+            cursor.seedSampler = seed_sampler
+            cursor.time = time
             
             state = self.create_render_state(mesh, target)
             cmd.set_render_state(state)
@@ -274,12 +282,61 @@ def alloc_target_texture(device: spy.Device, width: int, height: int):
     return texture, view
 
 
+def build_tlas(device: spy.Device, blas: spy.AccelerationStructure):
+    instance_list = device.create_acceleration_structure_instance_list(1)
+
+    xform = spy.math.matrix_from_translation(spy.float3(0.0, 0.0, 0.0))
+    xform = spy.float3x4(xform)
+
+    instance_desc = spy.AccelerationStructureInstanceDesc()
+    instance_desc.transform = xform
+    instance_desc.instance_id = 0
+    instance_desc.instance_mask = 0xff
+    instance_desc.instance_contribution_to_hit_group_index = 0
+    instance_desc.flags = spy.AccelerationStructureInstanceFlags.none
+    instance_desc.acceleration_structure = blas.handle
+
+    instance_list.write(0, instance_desc)
+
+    tlas_build_desc = spy.AccelerationStructureBuildDesc(
+        {
+            "inputs": [ instance_list.build_input_instances() ]
+        }
+    )
+
+    tlas_sizes = device.get_acceleration_structure_sizes(tlas_build_desc)
+
+    tlas_scratch_buffer = device.create_buffer(
+        size=tlas_sizes.scratch_size,
+        usage=spy.BufferUsage.unordered_access,
+    )
+    
+    tlas_buffer = device.create_buffer(
+        size=tlas_sizes.acceleration_structure_size,
+        usage=spy.BufferUsage.acceleration_structure,
+    )
+
+    tlas = device.create_acceleration_structure(
+        size=tlas_buffer.size,
+    )
+
+    command_encoder = device.create_command_encoder()
+    command_encoder.build_acceleration_structure(
+        desc=tlas_build_desc,
+        dst=tlas,
+        src=None,
+        scratch_buffer=tlas_scratch_buffer,
+    )
+    device.submit_command_buffer(command_encoder.finish())
+
+    return tlas
+
 def main():
     device = create_device()
 
     optimizer = Adam(alpha=1e-2)
-    mlp = AddressBasedMLP.new(device, hidden=32, hidden_layers=2, input=3, output=3)
-    grid = DenseGrid.new(device, dimension=3, features=3, resolution=64)
+    mlp = AddressBasedMLP.new(device, hidden=64, hidden_layers=2, input=8, output=3)
+    grid = DenseGrid.new(device, dimension=3, features=8, resolution=32)
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
     grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
     
@@ -309,6 +366,8 @@ def main():
     print(f"Bounding cylinder - center: {mesh_center}, radius: {cylinder_radius:.3f}, height: {cylinder_height:.3f}")
     
     mesh = TriangleMesh.new(device, geometry)
+    blas = mesh.blas(device)
+    tlas = build_tlas(device, blas)
     
     show_reference = True
     pause_orbit = False
@@ -323,6 +382,27 @@ def main():
                 pause_orbit = not pause_orbit
 
     app = App(device, keyboard_hook=keyboard_hook)
+
+    # Random seeds
+    seeds = np.random.rand(512, 512).astype(np.float32)
+
+    seed_texture = device.create_texture(
+        type=spy.TextureType.texture_2d,
+        format=spy.Format.r32_float,
+        width=512,
+        height=512,
+        usage=spy.TextureUsage.shader_resource,
+        data=seeds,
+    )
+
+    seed_sampler = device.create_sampler(
+        min_filter=spy.TextureFilteringMode.linear,
+        mag_filter=spy.TextureFilteringMode.linear,
+        mip_filter=spy.TextureFilteringMode.linear,
+        address_u=spy.TextureAddressingMode.wrap,
+        address_v=spy.TextureAddressingMode.wrap,
+        address_w=spy.TextureAddressingMode.wrap,
+    )
 
     # Final render resources    
     normal_resolution = 512
@@ -382,12 +462,18 @@ def main():
         orbit_radius = mesh_size * 1.2  # Orbit radius based on mesh size
         camera.transform.position = mesh_center + orbit_radius * np.array(
             (np.cos(time),
-            0.2 * np.sin(3 * time),
+            # 0.2 * np.sin(3 * time),
+            0.0,
             np.sin(time))
         )
         camera.transform.look_at(mesh_center)
 
+    # TODO: fix camera, rotate object?
+    sample_count = 0
     def loop(frame: Frame):
+        nonlocal sample_count
+        sample_count += 1
+
         # Orbit time
         nonlocal counter
         time = counter * 0.01
@@ -401,10 +487,14 @@ def main():
         rendering_pipeline.render_reference(
             camera,
             mesh,
+            tlas,
             (train_ref_texture, train_ref_texture_view),
             depth_texture_view,
             diffuse_texture,
             sampler,
+            seed_texture,
+            seed_sampler,
+            sample_count,
         )
 
         # Prepare inputs for neural shading
@@ -429,10 +519,14 @@ def main():
             rendering_pipeline.render_reference(
                 camera,
                 mesh,
+                tlas,
                 (texture, texture_view),
                 depth_texture_view,
                 diffuse_texture,
                 sampler,
+                seed_texture,
+                seed_sampler,
+                sample_count,
             )
         else:
             rendering_pipeline.render_gbuffer(
