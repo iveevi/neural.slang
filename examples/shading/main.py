@@ -50,8 +50,24 @@ class RenderingPipeline:
         self.update_grid_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid")
 
         # Reference pipeline
-        self.reference_pipeline = self.create_rasterization_pipeline(device, "reference_fragment")
-        self.gbuffer_pipeline = self.create_rasterization_pipeline(device, "gbuffer_fragment")
+        self.reference_pipeline = self.create_rasterization_pipeline(
+            device,
+            "reference_fragment",
+            [
+                { "format": spy.Format.rgba32_float },
+            ]
+        )
+
+        self.gbuffer_pipeline = self.create_rasterization_pipeline(
+            device,
+            "gbuffer_fragment",
+            [
+                # Position
+                { "format": spy.Format.rgba32_float },
+                # Albedo
+                { "format": spy.Format.rgba32_float },
+            ]
+        )
 
         # Neural shading pipeline
         self.neural_shading_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "deferred_neural_shading")
@@ -59,7 +75,7 @@ class RenderingPipeline:
         # Backward pass pipeline
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
 
-    def create_rasterization_pipeline(self, device: spy.Device, fragment_shader: str):
+    def create_rasterization_pipeline(self, device: spy.Device, fragment_shader: str, targets: list[dict[str, spy.Format]]):
         program = device.link_program(
             modules=[self.module, self.specialization_module],
             entry_points=[
@@ -103,9 +119,7 @@ class RenderingPipeline:
             program=program,
             input_layout=input_layout,
             primitive_topology=spy.PrimitiveTopology.triangle_list,
-            targets=[
-                { "format": spy.Format.rgba32_float },
-            ],
+            targets=targets,
             depth_stencil={
                 "format": spy.Format.d32_float,
                 "depth_test_enable": True,
@@ -115,15 +129,16 @@ class RenderingPipeline:
         )
 
     @staticmethod
-    def create_render_pass_args(target: tuple[spy.Texture, spy.TextureView], depth_target: spy.TextureView):
+    def create_render_pass_args(targets: list[tuple[spy.Texture, spy.TextureView]], depth_target: spy.TextureView):
         return {
             "color_attachments": [
                 {
                     "view": target[1],
-                    "clear_value": [0.0, 0.0, 0.0, 1.0],
-                    "load_op": spy.LoadOp.clear,
-                    "store_op": spy.StoreOp.store,
+                        "clear_value": [0.0, 0.0, 0.0, 1.0],
+                        "load_op": spy.LoadOp.clear,
+                        "store_op": spy.StoreOp.store,
                 }
+                for target in targets
             ],
             "depth_stencil_attachment": {
                 "view": depth_target,
@@ -150,11 +165,11 @@ class RenderingPipeline:
                          target: tuple[spy.Texture, spy.TextureView],
                          depth_target: spy.TextureView,
                          diffuse_texture: spy.Texture,
-                         sampler: spy.Sampler,
+                         diffuse_sampler: spy.Sampler,
                          seed_texture: spy.Texture,
                          seed_sampler: spy.Sampler,
                          time: float):
-        render_pass_args: Any = self.create_render_pass_args(target, depth_target)
+        render_pass_args: Any = self.create_render_pass_args([target], depth_target)
         
         command_encoder = self.device.create_command_encoder()
         
@@ -165,7 +180,7 @@ class RenderingPipeline:
             cursor.view = camera.view_matrix()
             cursor.perspective = camera.perspective_matrix()
             cursor.diffuseTexture = diffuse_texture
-            cursor.diffuseSampler = sampler
+            cursor.diffuseSampler = diffuse_sampler
             cursor.blas = blas
             cursor.seedTexture = seed_texture
             cursor.seedSampler = seed_sampler
@@ -185,8 +200,11 @@ class RenderingPipeline:
                         camera: Camera,
                         mesh: TriangleMesh,
                         depth_target: spy.TextureView,
-                        gbuffer_position: tuple[spy.Texture, spy.TextureView]):
-        render_pass_args: Any = self.create_render_pass_args(gbuffer_position, depth_target)
+                        diffuse_texture: spy.Texture,
+                        diffuse_sampler: spy.Sampler,
+                        gbuffer_position: tuple[spy.Texture, spy.TextureView],
+                        gbuffer_albedo: tuple[spy.Texture, spy.TextureView]):
+        render_pass_args: Any = self.create_render_pass_args([gbuffer_position, gbuffer_albedo], depth_target)
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_render_pass(render_pass_args) as cmd:
@@ -194,6 +212,8 @@ class RenderingPipeline:
             cursor = spy.ShaderCursor(shader_object)
             cursor.view = camera.view_matrix()
             cursor.perspective = camera.perspective_matrix()
+            cursor.diffuseTexture = diffuse_texture
+            cursor.diffuseSampler = diffuse_sampler
             state = self.create_render_state(mesh, gbuffer_position)
             cmd.set_render_state(state)
             params = spy.DrawArguments()
@@ -207,7 +227,8 @@ class RenderingPipeline:
                               mlp: MLP,
                               grid: DenseGrid,
                               target: tuple[spy.Texture, spy.TextureView],
-                              gbuffer_position: tuple[spy.Texture, spy.TextureView]):
+                              gbuffer_position: tuple[spy.Texture, spy.TextureView],
+                              gbuffer_albedo: tuple[spy.Texture, spy.TextureView]):
         command_encoder = self.device.create_command_encoder()
         
         with command_encoder.begin_compute_pass() as cmd:
@@ -216,6 +237,7 @@ class RenderingPipeline:
             cursor.mlp = mlp.dict()
             cursor.grid = grid.dict()
             cursor.gbufferPositionTexture = gbuffer_position[0]
+            cursor.gbufferAlbedoTexture = gbuffer_albedo[0]
             cursor.targetTexture = target[0]
             cmd.dispatch(thread_count=(target[0].width, target[0].height, 1))
             
@@ -226,6 +248,7 @@ class RenderingPipeline:
                  grid: DenseGrid,
                  reference_texture: spy.Texture,
                  gbuffer_position: tuple[spy.Texture, spy.TextureView],
+                 gbuffer_albedo: tuple[spy.Texture, spy.TextureView],
                  boost: float):
         command_encoder = self.device.create_command_encoder()
         
@@ -236,6 +259,7 @@ class RenderingPipeline:
             cursor.grid = grid.dict()
             cursor.referenceTexture = reference_texture
             cursor.gbufferPositionTexture = gbuffer_position[0]
+            cursor.gbufferAlbedoTexture = gbuffer_albedo[0]
             cursor.boost = boost
             cmd.dispatch(thread_count=(gbuffer_position[0].width, gbuffer_position[0].height, 1))
             
@@ -334,8 +358,9 @@ def build_tlas(device: spy.Device, blas: spy.AccelerationStructure):
 def main():
     device = create_device()
 
-    optimizer = Adam(alpha=1e-2)
+    optimizer = Adam(alpha=1e-3)
     mlp = AddressBasedMLP.new(device, hidden=64, hidden_layers=2, input=8, output=3)
+    # TODO: multires grid...
     grid = DenseGrid.new(device, dimension=3, features=8, resolution=32)
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
     grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
@@ -408,11 +433,13 @@ def main():
     normal_resolution = 512
     texture, texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
     gb_position_texture, gb_position_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
+    gb_albedo_texture, gb_albedo_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
 
     # Training resources
     train_resolution = 256
     train_ref_texture, train_ref_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
     train_gb_position_texture, train_gb_position_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
+    train_gb_albedo_texture, train_gb_albedo_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
 
     depth_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
@@ -502,7 +529,10 @@ def main():
             camera,
             mesh,
             depth_texture_view,
+            diffuse_texture,
+            sampler,
             (train_gb_position_texture, train_gb_position_texture_view),
+            (train_gb_albedo_texture, train_gb_albedo_texture_view),
         )
 
         # Backward pass
@@ -511,6 +541,7 @@ def main():
             grid,
             train_ref_texture,
             (train_gb_position_texture, train_gb_position_texture_view),
+            (train_gb_albedo_texture, train_gb_albedo_texture_view),
             boost=(1.0 / (train_ref_texture.width * train_ref_texture.height))
         )
         
@@ -533,7 +564,10 @@ def main():
                 camera,
                 mesh,
                 depth_texture_view,
+                diffuse_texture,
+                sampler,
                 (gb_position_texture, gb_position_texture_view),
+                (gb_albedo_texture, gb_albedo_texture_view),
             )
 
             rendering_pipeline.render_neural_shading(
@@ -541,11 +575,14 @@ def main():
                 grid,
                 (texture, texture_view),
                 (gb_position_texture, gb_position_texture_view),
+                (gb_albedo_texture, gb_albedo_texture_view),
             )
 
         # Optimize
         rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
         rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
+
+        # TODO: use weighted average technique to mitigate temporal flickering
         
         # Display
         frame.blit(texture)

@@ -49,17 +49,29 @@ float rand(inout float seed)
     return seed;
 }
 
+float2 rand2(inout float seed)
+{
+    return float2(rand(seed), rand(seed));
+}
+
 struct AreaLight
 {
     float3 center;
     float3 horizontal;
     float3 vertical;
-    float3 color;
 
-    float3 sample(inout float seed)
+    float3 sample(float2 uv)
     {
-        float2 uv = float2(rand(seed), rand(seed));
         return center + (uv.x - 0.5) * horizontal + (uv.y - 0.5) * vertical;
+    }
+
+    float3 color(float2 uv)
+    {
+        // Blue on the left, orange on the right
+        if (uv.x < 0.5)
+            return float3(0.23, 0.23, 0.80) * 2;
+        else
+            return float3(0.98, 0.47, 0.13) * 2;
     }
 }
 
@@ -79,12 +91,12 @@ float4 reference_fragment(VertexResult input) : SV_Target
         float3(0.0, 7.0, 0.0),
         float3(1.0, 0.0, 0.0) * 5,
         float3(0.0, 0.0, 1.0) * 5,
-        float3(2.0, 2.0, 1.8) * 2,
     );
 
     // Ray casting for shadows
     let offset = input.worldPosition + 1e-3 * normal;
-    let sample = light.sample(seed);
+    let uv = rand2(seed);
+    let sample = light.sample(uv);
 
     RayDesc ray;
     ray.Origin = offset;
@@ -105,13 +117,13 @@ float4 reference_fragment(VertexResult input) : SV_Target
     float shadow = query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
     float ndotl = max(dot(normal, ray.Direction), 0.0);
 
-    return float4(float3(shadow) * light.color * albedo * ndotl, 1.0);
+    return float4(float3(shadow) * light.color(uv) * albedo * ndotl, 1.0);
 }
 
 struct GBuffer
 {
     float3 position : SV_Target0;
-    // TODO: albedo as well
+    float3 albedo : SV_Target1;
 }
 
 [shader("fragment")]
@@ -119,6 +131,7 @@ GBuffer gbuffer_fragment(VertexResult input) : SV_Target
 {
     GBuffer result;
     result.position = input.worldPosition;
+    result.albedo = diffuseTexture.Sample(diffuseSampler, input.uv).rgb;
     return result;
 }
 
@@ -132,34 +145,34 @@ typealias MLP = AddressBasedMLP<8, 3, Hidden, HiddenLayers, LeakyReLU<float>, Id
 typealias Grid = DenseGrid<3, 8>;
 
 [BackwardDifferentiable]
-InlineVector<float, 3> shade(
+float3 shade(
     Grid.Parameters gridParameters,
     MLP.Parameters mlpParameters,
-    float3 position
+    no_diff float3 position,
+    no_diff float3 albedo
 )
 {
-    let encoder = FrequencyEncoder<float, 3, 8>();
     let input = InlineVector<float, 3>.fromVector(bound.normalized(position));
     let feature = Grid.eval(gridParameters, grid.configuration, input);
-    // let encoded = encoder.eval<InlineVector<float, 3>, InlineVector<float, 48>>(input);
     let output = MLP.eval(mlpParameters, feature);
-    return output;
+    return output.toVector() * albedo;
 }
 
 uniform RWTexture2D targetTexture;
 uniform Texture2D gbufferPositionTexture;
+uniform Texture2D gbufferAlbedoTexture;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void deferred_neural_shading(uint3 tid : SV_DispatchThreadID)
 {
     let position = gbufferPositionTexture[tid.xy];
+    let albedo = gbufferAlbedoTexture[tid.xy];
 
     float3 color = float3(0.0, 0.0, 0.0);
     if (position.w < 1.0)
     {
-        let shaded = shade(grid.parameters, mlp.parameters, position.xyz);
-        color = shaded.toVector();
+        color = shade(grid.parameters, mlp.parameters, position.xyz, albedo.xyz);
     }
 
     targetTexture[tid.xy] = float4(color, 1.0);
@@ -170,13 +183,15 @@ float loss(
     Grid.Parameters gridParameters,
     MLP.Parameters mlpParameters,
     no_diff float3 position,
+    no_diff float3 albedo,
     no_diff float3 expected
 )
 {
-    let output = shade(gridParameters, mlpParameters, position);
+    let output = shade(gridParameters, mlpParameters, position, albedo);
     let mse = MeanSquaredError<float>();
+    let outputVec = InlineVector<float, 3>.fromVector(output);
     let expectedVec = InlineVector<float, 3>.fromVector(expected);
-    return mse.eval(output, expectedVec);
+    return mse.eval(outputVec, expectedVec);
 }
 
 uniform Texture2D referenceTexture;
@@ -187,6 +202,7 @@ uniform float boost;
 void backward(uint3 tid : SV_DispatchThreadID)
 {
     let position = gbufferPositionTexture[tid.xy];
+    let albedo = gbufferAlbedoTexture[tid.xy];
     if (position.w < 1.0)
     {
         let expected = referenceTexture[tid.xy].rgb;
@@ -194,6 +210,7 @@ void backward(uint3 tid : SV_DispatchThreadID)
             grid.dual,
             mlp.dual,
             position.xyz,
+            albedo.xyz,
             expected,
             boost
         );
