@@ -9,7 +9,7 @@ import slangpy as spy
 import trimesh
 
 
-HERE = ROOT / "examples" / "surf"
+HERE = ROOT / "examples" / "nao"
 
 
 @dataclass
@@ -46,22 +46,30 @@ class RenderingPipeline:
         print("network_type", self.network_type)
        
         # Neural rendering pipeline
-        self.render_neural_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_neural")
+        # self.render_neural_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_neural")
         
         # Backward pass pipeline
-        self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
+        # self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
 
         # Optimization pipeline
         self.update_mlp_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_mlp")
-        self.update_grid1_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid1")
-        self.update_grid2_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid2")
+        self.update_grid_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid")
 
         # Reference pipeline
-        reference_program = device.link_program(
+        self.reference_pipeline = self.create_rasterization_pipeline(device, "reference_fragment")
+
+        # Neural shading pipeline
+        self.neural_shading_pipeline = self.create_rasterization_pipeline(device, "render_neural_shading")
+
+        # Backward pass pipeline
+        self.backward_pipeline = self.create_rasterization_pipeline(device, "render_backward")
+
+    def create_rasterization_pipeline(self, device: spy.Device, fragment_shader: str):
+        program = device.link_program(
             modules=[self.module, self.specialization_module],
             entry_points=[
                 self.module.entry_point("reference_vertex"),
-                self.module.entry_point("reference_fragment"),
+                self.module.entry_point(fragment_shader),
             ],
         )
         
@@ -96,8 +104,8 @@ class RenderingPipeline:
             ]
         )
         
-        self.reference_pipeline = device.create_render_pipeline(
-            program=reference_program,
+        return device.create_render_pipeline(
+            program=program,
             input_layout=input_layout,
             primitive_topology=spy.PrimitiveTopology.triangle_list,
             targets=[
@@ -111,59 +119,9 @@ class RenderingPipeline:
             }
         )
 
-    def render_neural(self, mlp: MLP, grid1: DenseGrid, grid2: DenseGrid, rayframe: RayFrame, target_texture: spy.Texture, cylinder: Cylinder, show_half: bool):
-        command_encoder = self.device.create_command_encoder()
-
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.render_neural_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
-            cursor.grid1 = grid1.dict()
-            cursor.grid2 = grid2.dict()
-            cursor.rayFrame = rayframe.dict()
-            cursor.targetTexture = target_texture
-            cursor.targetResolution = (target_texture.width, target_texture.height)
-            cursor.cylinder = cylinder.dict()
-            cursor.showHalf = show_half
-            cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
-            
-        self.device.submit_command_buffer(command_encoder.finish())
-        
-    def backward(self,
-                 mlp: MLP,
-                 grid1: DenseGrid,
-                 grid2: DenseGrid,
-                 rayframe: RayFrame,
-                 target_texture: spy.Texture,
-                 cylinder: Cylinder,
-                 loss_buffer: spy.Buffer,
-                 boost: float):
-        command_encoder = self.device.create_command_encoder()
-        
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.backward_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
-            cursor.grid1 = grid1.dict()
-            cursor.grid2 = grid2.dict()
-            cursor.rayFrame = rayframe.dict()
-            cursor.targetTexture = target_texture
-            cursor.targetResolution = (target_texture.width, target_texture.height)
-            cursor.lossBuffer = loss_buffer
-            cursor.cylinder = cylinder.dict()
-            cursor.boost = boost
-            cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
-            
-        self.device.submit_command_buffer(command_encoder.finish())
-        
-    def render_reference(self,
-                         camera: Camera,
-                         mesh: TriangleMesh,
-                         target: tuple[spy.Texture, spy.TextureView],
-                         depth_target: spy.TextureView,
-                         diffuse_texture: spy.Texture,
-                         sampler: spy.Sampler):
-        render_pass_args: Any = {
+    @staticmethod
+    def create_render_pass_args(target: tuple[spy.Texture, spy.TextureView], depth_target: spy.TextureView):
+        return {
             "color_attachments": [
                 {
                     "view": target[1],
@@ -179,6 +137,25 @@ class RenderingPipeline:
                 "depth_store_op": spy.StoreOp.store,
             }
         }
+
+    @staticmethod
+    def create_render_state(mesh: TriangleMesh, target: tuple[spy.Texture, spy.TextureView]):
+        state = spy.RenderState()
+        state.vertex_buffers = [mesh.vertices, mesh.normals, mesh.uvs]
+        state.index_buffer = mesh.triangles
+        state.index_format = spy.IndexFormat.uint32
+        state.viewports = [spy.Viewport.from_size(target[0].width, target[0].height)]
+        state.scissor_rects = [spy.ScissorRect.from_size(target[0].width, target[0].height)]
+        return state
+
+    def render_reference(self,
+                         camera: Camera,
+                         mesh: TriangleMesh,
+                         target: tuple[spy.Texture, spy.TextureView],
+                         depth_target: spy.TextureView,
+                         diffuse_texture: spy.Texture,
+                         sampler: spy.Sampler):
+        render_pass_args: Any = self.create_render_pass_args(target, depth_target)
         
         command_encoder = self.device.create_command_encoder()
         
@@ -191,22 +168,75 @@ class RenderingPipeline:
             cursor.diffuseTexture = diffuse_texture
             cursor.diffuseSampler = sampler
             
-            state = spy.RenderState()
-            state.vertex_buffers = [ mesh.vertices, mesh.normals, mesh.uvs ]
-            state.index_buffer = mesh.triangles
-            state.index_format = spy.IndexFormat.uint32
-            state.viewports = [
-                spy.Viewport.from_size(target[0].width, target[0].height)
-            ]
-            state.scissor_rects = [
-                spy.ScissorRect.from_size(target[0].width, target[0].height)
-            ]
+            state = self.create_render_state(mesh, target)
             cmd.set_render_state(state)
             
             params = spy.DrawArguments()
             params.instance_count = 1
-            params.vertex_count = mesh.triangle_count * 3  # Total indices to draw
+            params.vertex_count = mesh.triangle_count * 3
+            cmd.draw_indexed(params)
             
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def render_neural_shading(self,
+                              camera: Camera,
+                              mesh: TriangleMesh,
+                              mlp: MLP,
+                              grid: DenseGrid,
+                              target: tuple[spy.Texture, spy.TextureView],
+                              depth_target: spy.TextureView):
+        render_pass_args: Any = self.create_render_pass_args(target, depth_target)
+        command_encoder = self.device.create_command_encoder()
+        
+        with command_encoder.begin_render_pass(render_pass_args) as cmd:
+            shader_object = cmd.bind_pipeline(self.neural_shading_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.view = camera.view_matrix()
+            cursor.perspective = camera.perspective_matrix()
+            cursor.mlp = mlp.dict()
+            cursor.grid = grid.dict()
+            state = self.create_render_state(mesh, target)
+            cmd.set_render_state(state)
+            params = spy.DrawArguments()
+            params.instance_count = 1
+            params.vertex_count = mesh.triangle_count * 3
+            cmd.draw_indexed(params)
+            
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def render_backward(self,
+                        camera: Camera,
+                        mesh: TriangleMesh,
+                        reference_texture: spy.Texture,
+                        reference_sampler: spy.Sampler,
+                        mlp: MLP,
+                        grid: DenseGrid,
+                        target: tuple[spy.Texture, spy.TextureView],
+                        depth_target: spy.TextureView,
+                        loss_buffer: spy.Buffer,
+                        valid_buffer: spy.Buffer,
+                        boost: float):
+        render_pass_args: Any = self.create_render_pass_args(target, depth_target)
+        command_encoder = self.device.create_command_encoder()
+        
+        with command_encoder.begin_render_pass(render_pass_args) as cmd:
+            shader_object = cmd.bind_pipeline(self.backward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.view = camera.view_matrix()
+            cursor.perspective = camera.perspective_matrix()
+            cursor.referenceTexture = reference_texture
+            cursor.referenceSampler = reference_sampler
+            cursor.mlp = mlp.dict()
+            cursor.grid = grid.dict()
+            cursor.targetResolution = (target[0].width, target[0].height)
+            cursor.boost = boost
+            cursor.lossBuffer = loss_buffer
+            cursor.validBuffer = valid_buffer
+            state = self.create_render_state(mesh, target)
+            cmd.set_render_state(state)
+            params = spy.DrawArguments()
+            params.instance_count = 1
+            params.vertex_count = mesh.triangle_count * 3
             cmd.draw_indexed(params)
             
         self.device.submit_command_buffer(command_encoder.finish())
@@ -224,32 +254,18 @@ class RenderingPipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def update_grid1(self, grid1: DenseGrid, optimizer: Optimizer, optimizer_states: spy.Buffer):
+    def update_grid(self, grid: DenseGrid, optimizer: Optimizer, optimizer_states: spy.Buffer):
         command_encoder = self.device.create_command_encoder()
         
         with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.update_grid1_pipeline)
+            shader_object = cmd.bind_pipeline(self.update_grid_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.grid1 = grid1.dict()
+            cursor.grid = grid.dict()
             cursor.optimizer = optimizer.dict()
             cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(grid1.parameter_count, 1, 1))
+            cmd.dispatch(thread_count=(grid.parameter_count, 1, 1))
             
         self.device.submit_command_buffer(command_encoder.finish())
-
-    def update_grid2(self, grid2: DenseGrid, optimizer: Optimizer, optimizer_states: spy.Buffer):
-        command_encoder = self.device.create_command_encoder()
-        
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.update_grid2_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.grid2 = grid2.dict()
-            cursor.optimizer = optimizer.dict()
-            cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(grid2.parameter_count, 1, 1))
-            
-        self.device.submit_command_buffer(command_encoder.finish())
-
 
 
 def alloc_target_texture(device: spy.Device, width: int, height: int):
@@ -270,12 +286,10 @@ def main():
     device = create_device()
 
     optimizer = Adam(alpha=1e-2)
-    mlp = AddressBasedMLP.new(device, hidden=16, hidden_layers=3, input=8, output=3)
-    grid1 = DenseGrid.new(device, dimension=2, features=4, resolution=64)
-    grid2 = DenseGrid.new(device, dimension=2, features=4, resolution=128)
+    mlp = AddressBasedMLP.new(device, hidden=32, hidden_layers=2, input=3, output=3)
+    grid = DenseGrid.new(device, dimension=3, features=3, resolution=128)
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
-    grid1_optimizer_states = grid1.alloc_optimizer_states(device, optimizer)
-    grid2_optimizer_states = grid2.alloc_optimizer_states(device, optimizer)
+    grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
     
     rendering_pipeline = RenderingPipeline(device, mlp)
     
@@ -304,20 +318,14 @@ def main():
     
     mesh = TriangleMesh.new(device, geometry)
     
-    # show_reference = False
-
-    show_mode = 0
-    show_reference = 0
-    show_neural = 1
-    show_side_by_side = 2
-
+    show_reference = True
     pause_orbit = False
     
     def keyboard_hook(event: spy.KeyboardEvent):
         if event.type == spy.KeyboardEventType.key_press:
             if event.key == spy.KeyCode.tab:
-                nonlocal show_mode
-                show_mode = (show_mode + 1) % 3
+                nonlocal show_reference
+                show_reference = not show_reference
             if event.key == spy.KeyCode.space:
                 nonlocal pause_orbit
                 pause_orbit = not pause_orbit
@@ -325,7 +333,9 @@ def main():
     app = App(device, keyboard_hook=keyboard_hook)
     
     texture, texture_view = alloc_target_texture(device, 512, 512)
-    train_texture, train_texture_view = alloc_target_texture(device, 256, 256)
+
+    ref_texture, ref_texture_view = alloc_target_texture(device, 128, 128)
+    train_texture, train_texture_view = alloc_target_texture(device, 128, 128)
 
     depth_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
@@ -370,6 +380,7 @@ def main():
     camera.transform.position = mesh_center + np.array([0.0, 0.0, camera_distance])
     
     loss_buffer = create_buffer_32b(device, np.zeros((app.width * app.height,), dtype=np.float32))
+    valid_buffer = create_buffer_32b(device, np.zeros((app.width * app.height,), dtype=np.float32))
     
     history = []
     counter = 0
@@ -387,50 +398,51 @@ def main():
     orbit_third = 2 * np.pi / 3
     
     def loop(frame: Frame):
+        # Orbit time
         nonlocal counter
         time = counter * 0.01
         if not pause_orbit:
             counter += 1
 
-        samples = 3
-        shifts = np.linspace(0, 2 * np.pi, samples)
-        noise = 0.1 * (2 * np.random.rand(samples) - 1) / samples
-        shifts += noise
+        # Orbit camera
+        set_orbit_camera(time)
 
-        for shift in shifts:
-            set_orbit_camera(time + shift)
+        # Reference rendering
+        rendering_pipeline.render_reference(
+            camera,
+            mesh,
+            (ref_texture, ref_texture_view),
+            depth_texture_view,
+            diffuse_texture,
+            sampler,
+        )
 
-            # Reference rendering for training
-            rendering_pipeline.render_reference(
-                camera,
-                mesh,
-                (train_texture, train_texture_view),
-                depth_texture_view,
-                diffuse_texture,
-                sampler,
-            )
+        loss_numpy = np.zeros((app.width * app.height,), dtype=np.float32)
+        valid_numpy = np.zeros((app.width * app.height,), dtype=np.float32)
+        loss_buffer.copy_from_numpy(loss_numpy)
+        valid_buffer.copy_from_numpy(valid_numpy)
 
-            device.wait_for_idle()
-            
-            # Backward pass
-            boost = 1.0 / (samples * train_texture.width * train_texture.height)
-            rendering_pipeline.backward(mlp, grid1, grid2, camera.rayframe(), train_texture, bound, loss_buffer, boost)
-            
-            device.wait_for_idle()
+        rendering_pipeline.render_backward(
+            camera,
+            mesh,
+            ref_texture,
+            sampler,
+            mlp,
+            grid,
+            (train_texture, train_texture_view),
+            depth_texture_view,
+            loss_buffer,
+            valid_buffer,
+            boost=(1.0 / (train_texture.width * train_texture.height))
+        )
 
-        # Optimize
-        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
-        rendering_pipeline.update_grid1(grid1, optimizer, grid1_optimizer_states)
-        rendering_pipeline.update_grid2(grid2, optimizer, grid2_optimizer_states)
-    
-        loss_data = loss_buffer.to_numpy().view(np.float32)
-        loss = loss_data.mean()
+        loss = loss_buffer.to_numpy().view(np.float32)
+        valid = valid_buffer.to_numpy().view(np.float32)
+        loss = loss[valid == 1.0].mean()
         history.append(loss)
         
         # Rendering
-        set_orbit_camera(time)
-
-        if show_mode == show_reference or show_mode == show_side_by_side:
+        if show_reference:
             rendering_pipeline.render_reference(
                 camera,
                 mesh,
@@ -439,16 +451,19 @@ def main():
                 diffuse_texture,
                 sampler,
             )
-        if show_mode == show_neural or show_mode == show_side_by_side:
-            rendering_pipeline.render_neural(
+        else:
+            rendering_pipeline.render_neural_shading(
+                camera,
+                mesh,
                 mlp,
-                grid1,
-                grid2,
-                camera.rayframe(),
-                texture,
-                bound,
-                show_mode == show_side_by_side,
+                grid,
+                (texture, texture_view),
+                depth_texture_view,
             )
+
+        # Optimize
+        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
+        rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
         
         # Display
         frame.blit(texture)
