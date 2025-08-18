@@ -42,14 +42,15 @@ class Pipeline:
         self.update_mlp_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_mlp")
         self.update_grid_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid")
         
-    def render_heatmap(self, mlp: MLP, grid: Object, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_heatmap(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_heatmap_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
-            cursor.grid = grid.dict()
+            cursor.scene.mlp = mlp.dict()
+            cursor.scene.grid = grid.dict()
+            cursor.scene.mldg = mldg.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
@@ -57,14 +58,15 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def render_normal(self, mlp: MLP, grid: Object, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_normal(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_normal_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
-            cursor.grid = grid.dict()
+            cursor.scene.mlp = mlp.dict()
+            cursor.scene.grid = grid.dict()
+            cursor.scene.mldg = mldg.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
@@ -72,14 +74,15 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def backward(self, mlp: MLP, grid: Object, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, loss_buffer: spy.Buffer, sample_count: int):
+    def backward(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, loss_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.backward_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
-            cursor.grid = grid.dict()
+            cursor.scene.mlp = mlp.dict()
+            cursor.scene.grid = grid.dict()
+            cursor.scene.mldg = mldg.dict()
             cursor.inputBuffer = input_buffer
             cursor.expectedBuffer = expected_buffer
             cursor.lossBuffer = loss_buffer
@@ -88,29 +91,30 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def update_mlp(self, mlp: MLP, optimizer: Optimizer, optimizer_states: spy.Buffer, parameter_count: int):
+    # TODO: general update method for optimizable objects
+    def update_mlp(self, mlp: MLP, optimizer: Optimizer, optimizer_states: spy.Buffer):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.update_mlp_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
+            cursor.scene.mlp = mlp.dict()
             cursor.optimizer = optimizer.dict()
             cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(parameter_count, 1, 1))
+            cmd.dispatch(thread_count=(mlp.parameter_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def update_grid(self, grid: Object, optimizer: Optimizer, optimizer_states: spy.Buffer, parameter_count: int):
+    def update_grid(self, grid: Grid, optimizer: Optimizer, optimizer_states: spy.Buffer):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.update_grid_pipeline)
             cursor = spy.ShaderCursor(shader_object)
-            cursor.grid = grid.dict()
+            cursor.scene.grid = grid.dict()
             cursor.optimizer = optimizer.dict()
             cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(parameter_count, 1, 1))
+            cmd.dispatch(thread_count=(grid.parameter_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
 
@@ -119,13 +123,15 @@ def main():
     device = create_device()
 
     features = 2
-    mlp = AddressBasedMLP.new(device, hidden=32, hidden_layers=2, input=features, output=1)
-    grid = FeatureGrid.new(device, dimension=3, features=features, resolution=16)
+    mlp = AddressBasedMLP.new(device, hidden=32, hidden_layers=2, input=3 * features, output=1)
+    grid = DenseGrid.new(device, dimension=3, features=features, resolution=16)
+    mldg = MultiLevelDenseGrid.new(device, dimension=3, features=features, resolutions=[16, 32, 64])
     rendering_pipeline = Pipeline(device, mlp, grid)
 
     optimizer = Adam(alpha=1e-2)
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
     grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
+    mldg_optimizer_states = mldg.alloc_optimizer_states(device, optimizer)
 
     # Allocate loss buffer
     SAMPLE_COUNT = 1 << 14
@@ -133,7 +139,7 @@ def main():
     sdf_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
     loss_buffer = create_buffer_32b(device, np.zeros(SAMPLE_COUNT, dtype=np.float32))
 
-    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "bunny.obj"))
+    mesh_obj = pv.MeshObjectFactory(str(ROOT / "resources" / "spot.obj"))
     mesh_sdf = pv.MeshSDF(mesh_obj)
 
     def target_sdf(samples: np.ndarray) -> np.ndarray:
@@ -186,9 +192,9 @@ def main():
 
         # Rendering
         if render_heatmap:
-            rendering_pipeline.render_heatmap(mlp, grid, camera.rayframe(), texture)
+            rendering_pipeline.render_heatmap(mlp, grid, mldg, camera.rayframe(), texture)
         else:
-            rendering_pipeline.render_normal(mlp, grid, camera.rayframe(), texture)
+            rendering_pipeline.render_normal(mlp, grid, mldg, camera.rayframe(), texture)
 
         # Training
         samples = (2 * np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) - 1)
@@ -197,14 +203,15 @@ def main():
         sdf = target_sdf(samples)
         sdf_buffer.copy_from_numpy(sdf)
 
-        rendering_pipeline.backward(mlp, grid, sample_buffer, sdf_buffer, loss_buffer, SAMPLE_COUNT)
+        rendering_pipeline.backward(mlp, grid, mldg, sample_buffer, sdf_buffer, loss_buffer, SAMPLE_COUNT)
 
         loss = loss_buffer.to_numpy().view(np.float32).mean()
         history.append(loss)
         alphas.append(optimizer.alpha)
 
-        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states, mlp.parameter_count)
-        rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states, grid.parameter_count)
+        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
+        rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
+        rendering_pipeline.update_grid(mldg, optimizer, mldg_optimizer_states)
 
         frame.blit(texture)
         

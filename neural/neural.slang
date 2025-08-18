@@ -2,7 +2,6 @@ module neural;
 
 __include activations;
 __include cooperative_vector;
-__include dense_grid;
 __include encoders;
 __include inline_vector;
 __include interfaces;

@@ -1,9 +1,10 @@
-module feature_grid;
+module dense_grid;
 
 import neural;
 
 // Single level feature grid
-public struct DenseGrid<int D, int Features>
+// TODO: spit into dense_grid_impl.slang and dense_grid.slang
+public struct DenseGridImpl<int Dimension, int Features>
 {
     public typealias FeatureVector = InlineVector<float, Features>;
 
@@ -14,6 +15,17 @@ public struct DenseGrid<int D, int Features>
     {
         this.offset = offset;
         this.resolution = resolution;
+    }
+
+    public property int stride
+    {
+        get {
+            var result = 1;
+            [ForceUnroll]
+            for (int i = 0; i < Dimension; i++)
+                result *= resolution;
+            return result * Features;
+        }
     }
 
     [BackwardDerivative(getBwd)]
@@ -54,11 +66,11 @@ public struct DenseGrid<int D, int Features>
     }
 
     [NoDiffThis, BackwardDerivative(sampleLinearBwd)]
-    public FeatureVector sampleLinear(StructuredBufferStorage<float> storage, InlineVector<float, D> p)
+    public FeatureVector sampleLinear(StructuredBufferStorage<float> storage, InlineVector<float, Dimension> p)
     {
-        static_assert(D == 1, "Linear interpolation is only supported for 1D inputs");
+        static_assert(Dimension == 1, "Linear interpolation is only supported for 1D inputs");
         
-        let snapped = snapToLattice<InlineVector<float, D>, float, D>(p, resolution);
+        let snapped = snapToLattice<InlineVector<float, Dimension>, float, Dimension>(p, resolution);
         
         let value0 = get(storage, snapped.lower[0]);
         let value1 = get(storage, snapped.upper[0]);
@@ -69,11 +81,11 @@ public struct DenseGrid<int D, int Features>
     }
 
     [NoDiffThis, BackwardDerivative(sampleBilinearBwd)]
-    public FeatureVector sampleBilinear(StructuredBufferStorage<float> storage, InlineVector<float, D> p)
+    public FeatureVector sampleBilinear(StructuredBufferStorage<float> storage, InlineVector<float, Dimension> p)
     {
-        static_assert(D == 2, "Bilinear interpolation is only supported for 2D inputs");
+        static_assert(Dimension == 2, "Bilinear interpolation is only supported for 2D inputs");
         
-        let snapped = snapToLattice<InlineVector<float, D>, float, D>(p, resolution);
+        let snapped = snapToLattice<InlineVector<float, Dimension>, float, Dimension>(p, resolution);
         
         let idx00 = snapped.lower[1] * resolution + snapped.lower[0];
         let idx01 = snapped.upper[1] * resolution + snapped.lower[0];
@@ -93,16 +105,43 @@ public struct DenseGrid<int D, int Features>
         return value;
     }
 
+    [NoDiffThis, BackwardDerivative(sampleTrilinearBwd)]
+    public FeatureVector sampleTrilinear(StructuredBufferStorage<float> storage, InlineVector<float, Dimension> p)
+    {
+        let snapped = snapToLattice<InlineVector<float, Dimension>, float, Dimension>(p, resolution);
+
+        let value000 = get(storage, snapped.lower[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.lower[0]);
+        let value001 = get(storage, snapped.upper[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.lower[0]);
+        let value010 = get(storage, snapped.lower[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.lower[0]);
+        let value011 = get(storage, snapped.upper[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.lower[0]);
+        let value100 = get(storage, snapped.lower[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.upper[0]);
+        let value101 = get(storage, snapped.upper[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.upper[0]);
+        let value110 = get(storage, snapped.lower[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.upper[0]);
+        let value111 = get(storage, snapped.upper[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.upper[0]);
+        
+        let value00 = FeatureVector.interpolate(value000, value100, snapped.t[0]);
+        let value01 = FeatureVector.interpolate(value001, value101, snapped.t[0]);
+        let value10 = FeatureVector.interpolate(value010, value110, snapped.t[0]);
+        let value11 = FeatureVector.interpolate(value011, value111, snapped.t[0]);
+        
+        let value0 = FeatureVector.interpolate(value00, value10, snapped.t[1]);
+        let value1 = FeatureVector.interpolate(value01, value11, snapped.t[1]);
+        
+        let value = FeatureVector.interpolate(value0, value1, snapped.t[2]);
+        
+        return value;
+    }
+
     public void sampleLinearBwd(
         DifferentialPtrPair<StructuredBufferStorage<float>> dstorage,
-        inout DifferentialPair<InlineVector<float, D>> dp,
+        inout DifferentialPair<InlineVector<float, Dimension>> dp,
         FeatureVector.Differential doutput
     )
     {
-        static_assert(D == 1, "Linear interpolation is only supported for 1D inputs");
+        static_assert(Dimension == 1, "Linear interpolation is only supported for 1D inputs");
         
         // Reconstruct the snapped lattice information
-        let snapped = snapToLattice<InlineVector<float, D>, float, D>(dp.p, resolution);
+        let snapped = snapToLattice<InlineVector<float, Dimension>, float, Dimension>(dp.p, resolution);
         
         // Get the corner values for gradient computation
         let value0 = get(dstorage.p, snapped.lower[0]);
@@ -126,19 +165,19 @@ public struct DenseGrid<int D, int Features>
         
         var dp_d = dp.d;
         dp_d[0] += grad_d;
-        dp = DifferentialPair<InlineVector<float, D>>(dp.p, dp_d);
+        dp = DifferentialPair<InlineVector<float, Dimension>>(dp.p, dp_d);
     }
 
     public void sampleBilinearBwd(
         DifferentialPtrPair<StructuredBufferStorage<float>> dstorage,
-        inout DifferentialPair<InlineVector<float, D>> dp,
+        inout DifferentialPair<InlineVector<float, Dimension>> dp,
         FeatureVector.Differential doutput
     )
     {
-        static_assert(D == 2, "Bilinear interpolation is only supported for 2D inputs");
+        static_assert(Dimension == 2, "Bilinear interpolation is only supported for 2D inputs");
         
         // Reconstruct the snapped lattice information
-        let snapped = snapToLattice<InlineVector<float, D>, float, D>(dp.p, resolution);
+        let snapped = snapToLattice<InlineVector<float, Dimension>, float, Dimension>(dp.p, resolution);
         
         // Calculate indices for the 4 corners
         let idx00 = snapped.lower[1] * resolution + snapped.lower[0];
@@ -177,7 +216,7 @@ public struct DenseGrid<int D, int Features>
         // Compute gradients with respect to input position
         // For each dimension, we need to compute the derivative of the interpolation weights
         [ForceUnroll]
-        for (int d = 0; d < D; d++)
+        for (int d = 0; d < Dimension; d++)
         {
             // The derivative of snapped.t[d] with respect to p[d] is resolution
             let dt_dp = float(resolution);
@@ -199,45 +238,18 @@ public struct DenseGrid<int D, int Features>
             
             var dp_d = dp.d;
             dp_d[d] += grad_d;
-            dp = DifferentialPair<InlineVector<float, D>>(dp.p, dp_d);
+            dp = DifferentialPair<InlineVector<float, Dimension>>(dp.p, dp_d);
         }
-    }
-
-    [NoDiffThis, BackwardDerivative(sampleTrilinearBwd)]
-    public FeatureVector sampleTrilinear(StructuredBufferStorage<float> storage, InlineVector<float, D> p)
-    {
-        let snapped = snapToLattice<InlineVector<float, D>, float, D>(p, resolution);
-
-        let value000 = get(storage, snapped.lower[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.lower[0]);
-        let value001 = get(storage, snapped.upper[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.lower[0]);
-        let value010 = get(storage, snapped.lower[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.lower[0]);
-        let value011 = get(storage, snapped.upper[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.lower[0]);
-        let value100 = get(storage, snapped.lower[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.upper[0]);
-        let value101 = get(storage, snapped.upper[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.upper[0]);
-        let value110 = get(storage, snapped.lower[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.upper[0]);
-        let value111 = get(storage, snapped.upper[2] * resolution * resolution + snapped.upper[1] * resolution + snapped.upper[0]);
-        
-        let value00 = FeatureVector.interpolate(value000, value100, snapped.t[0]);
-        let value01 = FeatureVector.interpolate(value001, value101, snapped.t[0]);
-        let value10 = FeatureVector.interpolate(value010, value110, snapped.t[0]);
-        let value11 = FeatureVector.interpolate(value011, value111, snapped.t[0]);
-        
-        let value0 = FeatureVector.interpolate(value00, value10, snapped.t[1]);
-        let value1 = FeatureVector.interpolate(value01, value11, snapped.t[1]);
-        
-        let value = FeatureVector.interpolate(value0, value1, snapped.t[2]);
-        
-        return value;
     }
 
     public void sampleTrilinearBwd(
         DifferentialPtrPair<StructuredBufferStorage<float>> dstorage,
-        inout DifferentialPair<InlineVector<float, D>> dp,
+        inout DifferentialPair<InlineVector<float, Dimension>> dp,
         FeatureVector.Differential doutput
     )
     {
         // Reconstruct the snapped lattice information
-        let snapped = snapToLattice<InlineVector<float, D>, float, D>(dp.p, resolution);
+        let snapped = snapToLattice<InlineVector<float, Dimension>, float, Dimension>(dp.p, resolution);
         
         // Calculate indices for the 8 corners
         let idx000 = snapped.lower[2] * resolution * resolution + snapped.lower[1] * resolution + snapped.lower[0];
@@ -306,7 +318,7 @@ public struct DenseGrid<int D, int Features>
         // Compute gradients with respect to input position
         // For each dimension, we need to compute the derivative of the interpolation weights
         [ForceUnroll]
-        for (int d = 0; d < D; d++)
+        for (int d = 0; d < Dimension; d++)
         {
             // The derivative of snapped.t[d] with respect to p[d] is resolution
             let dt_dp = float(resolution);
@@ -336,29 +348,48 @@ public struct DenseGrid<int D, int Features>
             
             var dp_d = dp.d;
             dp_d[d] += grad_d;
-            dp = DifferentialPair<InlineVector<float, D>>(dp.p, dp_d);
+            dp = DifferentialPair<InlineVector<float, Dimension>>(dp.p, dp_d);
         }
     }
-
-    [BackwardDifferentiable]
-    public FeatureVector sample(StructuredBufferStorage<float> storage, InlineVector<float, D> p)
+    
+    // Only for derived structures
+    public void sampleBwd<OutputVector>(
+        DifferentialPtrPair<StructuredBufferStorage<float>> dstorage,
+        inout DifferentialPair<InlineVector<float, Dimension>> dp,
+        OutputVector.Differential doutput
+    )
+        where OutputVector : IVector<float, Features>
     {
-        if (D == 1)
+        if (Dimension == 1)
+            return sampleLinearBwd(dstorage, dp, __slang_noop_cast<FeatureVector>(doutput));
+        else if (Dimension == 2)
+            return sampleBilinearBwd(dstorage, dp, __slang_noop_cast<FeatureVector>(doutput));
+        else if (Dimension == 3)
+            return sampleTrilinearBwd(dstorage, dp, __slang_noop_cast<FeatureVector>(doutput));
+        else
+            static_assert(false, "DenseGridImpl only supports 1D, 2D, and 3D inputs");
+    }
+
+    [NoDiffThis, BackwardDifferentiable]
+    public FeatureVector sample(StructuredBufferStorage<float> storage, InlineVector<float, Dimension> p)
+    {
+        if (Dimension == 1)
             return sampleLinear(storage, p);
-        else if (D == 2)
+        else if (Dimension == 2)
             return sampleBilinear(storage, p);
-        else if (D == 3)
+        else if (Dimension == 3)
             return sampleTrilinear(storage, p);
         else
-            static_assert(false, "FeatureGrid only supports 1D, 2D, and 3D inputs");
+            static_assert(false, "DenseGridImpl only supports 1D, 2D, and 3D inputs");
 
         return FeatureVector();
     }
 }
 
 // TODO: some interface that is more general and mlp/encoder... this has the same structure...
-public struct FeatureGrid<int D, int Features>
+public struct DenseGrid<int Dimension, int Features>
 {
+    public typealias Impl = DenseGridImpl<Dimension, Features>;
     public typealias FeatureVector = InlineVector<float, Features>;
 
     public typealias Parameters = StructuredBufferStorage<float>;
@@ -375,6 +406,14 @@ public struct FeatureGrid<int D, int Features>
     {
         get {
             return StructuredBufferStorage<float>(parameterBuffer);
+        }
+    }
+
+    // TODO: temporary
+    public property StructuredBufferStorage<float> gradients
+    {
+        get {
+            return StructuredBufferStorage<float>(gradientBuffer);
         }
     }
 
@@ -402,9 +441,9 @@ public struct FeatureGrid<int D, int Features>
     }
 
     [BackwardDifferentiable]
-    public static FeatureVector eval(Parameters parameters, no_diff Configuration configuration, InlineVector<float, D> p)
+    public static FeatureVector eval(Parameters parameters, no_diff Configuration configuration, InlineVector<float, Dimension> p)
     {
-        return DenseGrid<D, Features>(
+        return Impl(
             configuration.offset,
             configuration.resolution
         ) .sample(parameters, p);

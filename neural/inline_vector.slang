@@ -36,6 +36,7 @@ public struct InlineVector<T, int N> : IVector<T, N>
         [BackwardDifferentiable]
         get() { return getIndex(index); }
 
+        // TODO: make this differentiable
         set() { data[index] = newValue; }
     }
 
