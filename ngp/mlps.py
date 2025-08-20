@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from .objects import MLP
+from .objects import MLP, Optimizable
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
@@ -16,6 +16,9 @@ class AddressBasedMLP(MLP):
             "parameterBuffer": self.parameter_buffer,
             "gradientBuffer": self.gradient_buffer,
         }
+
+    def slang_type(self) -> str:
+        return f"AddressBasedMLP<{self.input}, {self.output}, {self.hidden}, {self.hidden_layers}, ReLU<float>, Identity<float>>"
 
     @property
     def parameter_count(self):
@@ -49,6 +52,7 @@ class AddressBasedMLP(MLP):
         gradient_buffer = create_buffer_32b(device, gradients)
 
         return AddressBasedMLP(
+            device=device,
             parameter_buffer=parameter_buffer,
             gradient_buffer=gradient_buffer,
             hidden=hidden,

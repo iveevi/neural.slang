@@ -17,7 +17,8 @@ def create_device(
     include_paths = [
         ROOT / "neural",
         ROOT / "examples" / "slang",
-        ROOT / "examples" / "networks" / "slang",
+        ROOT / "examples" / "networks" / "slang", # TODO: remove
+        ROOT / "ngp" / "slang",
     ]
     
     if additional_include_paths:

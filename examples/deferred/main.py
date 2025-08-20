@@ -1,29 +1,15 @@
-from ..ngp import AddressBasedMLP, MLP, Adam, Optimizer, DenseGrid
 from ..util import *
 from PIL import Image
 from common import *
 from dataclasses import dataclass
+from ngp import AddressBasedMLP, MLP, Adam, Optimizer, DenseGrid
 from typing import Any
 import numpy as np
 import slangpy as spy
 import trimesh
 
 
-HERE = ROOT / "examples" / "shading"
-
-
-@dataclass
-class Cylinder:
-    center: spy.float3
-    radius: float
-    height: float
-
-    def dict(self):
-        return {
-            "center": self.center,
-            "radius": self.radius,
-            "height": self.height,
-        }
+HERE = ROOT / "examples" / "deferred"
 
 
 class RenderingPipeline:
@@ -44,10 +30,6 @@ class RenderingPipeline:
         
         self.network_type = self.module.layout.find_type_by_name("network")
         print("network_type", self.network_type)
-
-        # Optimization pipeline
-        self.update_mlp_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_mlp")
-        self.update_grid_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid")
 
         # Reference pipeline
         self.reference_pipeline = self.create_rasterization_pipeline(
@@ -265,32 +247,6 @@ class RenderingPipeline:
             
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def update_mlp(self, mlp: MLP, optimizer: Optimizer, optimizer_states: spy.Buffer):
-        command_encoder = self.device.create_command_encoder()
-
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.update_mlp_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.mlp = mlp.dict()
-            cursor.optimizer = optimizer.dict()
-            cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(mlp.parameter_count, 1, 1))
-
-        self.device.submit_command_buffer(command_encoder.finish())
-
-    def update_grid(self, grid: DenseGrid, optimizer: Optimizer, optimizer_states: spy.Buffer):
-        command_encoder = self.device.create_command_encoder()
-        
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.update_grid_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.grid = grid.dict()
-            cursor.optimizer = optimizer.dict()
-            cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(grid.parameter_count, 1, 1))
-            
-        self.device.submit_command_buffer(command_encoder.finish())
-
 
 def alloc_target_texture(device: spy.Device, width: int, height: int):
     texture = device.create_texture(
@@ -430,7 +386,7 @@ def main():
     )
 
     # Final render resources    
-    normal_resolution = 512
+    normal_resolution = 1024
     texture, texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
     gb_position_texture, gb_position_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
     gb_albedo_texture, gb_albedo_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
@@ -579,8 +535,10 @@ def main():
             )
 
         # Optimize
-        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
-        rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
+        # rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
+        # rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
+        mlp.update(optimizer, mlp_optimizer_states)
+        grid.update(optimizer, grid_optimizer_states)
 
         # TODO: use weighted average technique to mitigate temporal flickering
         

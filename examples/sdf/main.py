@@ -7,7 +7,7 @@ from scipy.ndimage import gaussian_filter
 from common import *
 
 from ..util import *
-from ..ngp import *
+from ngp import *
 
 
 HERE = ROOT / "examples" / "sdf"
@@ -19,9 +19,6 @@ class Pipeline:
     @staticmethod
     def load_specialization_module(device: spy.Device, mlp: MLP, grid: Grid):
         source = f"""
-        import neural;
-        import mlp;
-        
         export static const int Hidden = {mlp.hidden};
         export static const int HiddenLayers = {mlp.hidden_layers};
         export static const int Features = {grid.features};
@@ -39,8 +36,6 @@ class Pipeline:
         self.render_normal_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_normal")
 
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
-        self.update_mlp_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_mlp")
-        self.update_grid_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_grid")
         
     def render_heatmap(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
@@ -88,33 +83,6 @@ class Pipeline:
             cursor.lossBuffer = loss_buffer
             cursor.boost = 1.0 / sample_count
             cmd.dispatch(thread_count=(sample_count, 1, 1))
-
-        self.device.submit_command_buffer(command_encoder.finish())
-
-    # TODO: general update method for optimizable objects
-    def update_mlp(self, mlp: MLP, optimizer: Optimizer, optimizer_states: spy.Buffer):
-        command_encoder = self.device.create_command_encoder()
-
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.update_mlp_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.scene.mlp = mlp.dict()
-            cursor.optimizer = optimizer.dict()
-            cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(mlp.parameter_count, 1, 1))
-
-        self.device.submit_command_buffer(command_encoder.finish())
-
-    def update_grid(self, grid: Grid, optimizer: Optimizer, optimizer_states: spy.Buffer):
-        command_encoder = self.device.create_command_encoder()
-
-        with command_encoder.begin_compute_pass() as cmd:
-            shader_object = cmd.bind_pipeline(self.update_grid_pipeline)
-            cursor = spy.ShaderCursor(shader_object)
-            cursor.scene.grid = grid.dict()
-            cursor.optimizer = optimizer.dict()
-            cursor.optimizerStates = optimizer_states
-            cmd.dispatch(thread_count=(grid.parameter_count, 1, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
 
@@ -209,9 +177,9 @@ def main():
         history.append(loss)
         alphas.append(optimizer.alpha)
 
-        rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
-        rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
-        rendering_pipeline.update_grid(mldg, optimizer, mldg_optimizer_states)
+        mlp.update(optimizer, mlp_optimizer_states)
+        grid.update(optimizer, grid_optimizer_states)
+        mldg.update(optimizer, mldg_optimizer_states)
 
         frame.blit(texture)
         

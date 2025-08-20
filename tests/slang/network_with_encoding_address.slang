@@ -41,10 +41,10 @@ void computeMain(uint3 thread_id : SV_DispatchThreadID)
 
     let encoder = FrequencyEncoder<float, In, Levels>();
     
-    let ff1 = FeedForward<float, Encoded, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer1Address, {});
-    let ff2 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer2Address, {});
-    let ff3 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer3Address, {});
-    let ff4 = FeedForward<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(globals.layer4Address, {});
+    let ff1 = FFLayer<float, Encoded, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer1Address, {});
+    let ff2 = FFLayer<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer2Address, {});
+    let ff3 = FFLayer<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer3Address, {});
+    let ff4 = FFLayer<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(globals.layer4Address, {});
 
     let input = InputVec(globals.input[tid]);
 

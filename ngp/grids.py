@@ -20,6 +20,9 @@ class DenseGrid(Grid):
             "resolution": self.resolution,
         }
 
+    def slang_type(self) -> str:
+        return f"DenseGrid<{self.dimension}, {self.features}>"
+
     @property
     def parameter_count(self):
         return self.resolution ** self.dimension * self.features
@@ -35,6 +38,7 @@ class DenseGrid(Grid):
         parameter_buffer = create_buffer_32b(device, p, features)
         gradient_buffer = create_buffer_32b(device, g, features)
         return DenseGrid(
+            device=device,
             parameter_buffer=parameter_buffer,
             gradient_buffer=gradient_buffer,
             offset=0,
@@ -58,6 +62,9 @@ class MultiLevelDenseGrid(Grid):
             "resolutions": self.resolutions,
         }
 
+    def slang_type(self) -> str:
+        return f"MultiLevelDenseGrid<{self.features}>"
+
     @property
     def parameter_count(self):
         return sum(r ** self.dimension * self.features for r in self.resolutions)
@@ -74,6 +81,7 @@ class MultiLevelDenseGrid(Grid):
         parameter_buffer = create_buffer_32b(device, p, features)
         gradient_buffer = create_buffer_32b(device, g, features)
         return MultiLevelDenseGrid(
+            device=device,
             parameter_buffer=parameter_buffer,
             gradient_buffer=gradient_buffer,
             resolutions=resolutions,

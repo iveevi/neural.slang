@@ -171,34 +171,3 @@ public struct OneBlobEncoder<T, int N, int K> : IEncoder<T, N, N * K>
         dinput = DifferentialPair<InputVector>(p, __slang_noop_cast<InputVector.Differential>(d));
     }
 }
-
-
-///////////////
-// Hash grid //
-///////////////
-
-public struct HashGridEncoder<T, int Dim, int Levels, int Features, Storage> : ILearnableEncoder<T, Dim, Features * Levels, Storage>
-    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
-    where Storage : IStorage<T>
-{
-    Array<Storage.Address, Levels> addresses;
-    int gridResolution;
-    int hashTableSize;
-
-    [BackwardDifferentiable]
-    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
-        where InputVector : IVector<T, Dim>
-        where OutputVector : IVector<T, Features * Levels>
-    {
-        OutputVector output;
-        static_assert(false, "Not implemented");
-        return output;
-    }
-
-    static uint spatialHash<InputVector>(InputVector input)
-        where InputVector : IVector<T, Dim>
-    {
-        static_assert(false, "Not implemented");
-        return 0;
-    }
-}

@@ -22,7 +22,7 @@ ParameterBlock<FeedForwardGlobals> globals;
 [BackwardDifferentiable]
 OutputVec feed_forward(StructuredBufferStorage<float> parameters, InputVec input)
 {
-    var network = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    var network = FFLayer<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>(0, {});
     return network.eval<InputVec, OutputVec>(parameters, input);
 }
 

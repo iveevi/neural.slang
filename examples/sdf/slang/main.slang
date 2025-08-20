@@ -5,88 +5,18 @@ import random;
 import sdf;
 import shapes;
 
-import dense_grid;
-import mlp;
+import ngp;
 import neural;
-import network_with_addresses;
 
 // Neural network and extensions
 extern static const int Hidden = 64;
 extern static const int HiddenLayers = 3;
 extern static const int Features = 2;
 
+// typealias MLP = AddressBasedMLP<Features, 1, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
 typealias MLP = AddressBasedMLP<3 * Features, 1, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
 typealias Grid = DenseGrid<3, Features>;
 typealias Optimizer = Adam<float>;
-
-public struct MultiLevelDenseGrid
-{
-    RWStructuredBuffer<float> parameterBuffer;
-    RWStructuredBuffer<float> gradientBuffer;
-    Array<int, 3> resolutions;
-
-    public property StructuredBufferStorage<float> parameters
-    {
-        get { return StructuredBufferStorage<float>(parameterBuffer); }
-    }
-
-    public property StructuredBufferStorage<float> gradients
-    {
-        get { return StructuredBufferStorage<float>(gradientBuffer); }
-    }
-
-    public property DifferentialPtrPair<StructuredBufferStorage<float>> dual
-    {
-        get { return DifferentialPtrPair<StructuredBufferStorage<float>>(parameters, gradients); }
-    }
-
-    public property This configuration
-    {
-        get { return this; }
-    }
-
-    public void update<Optimizer>(Optimizer optimizer, inout Optimizer.State state, int tid)
-        where Optimizer : IOptimizer<float>
-    {
-        optimizer.step(state, parameterBuffer[tid], gradientBuffer[tid]);
-        gradientBuffer[tid] = 0.0;
-    }
-
-    [BackwardDifferentiable]
-    public static InlineVector<float, 3 * Features> eval(StructuredBufferStorage<float> parameters, This configuration, InlineVector<float, 3> p)
-    {
-        typealias Grid = DenseGrid<3, Features>;
-        
-        let g0 = Grid.Impl(0, configuration.resolutions[0]);
-        let f0 = g0.sample(parameters, p);
-
-        let g1 = Grid.Impl(g0.stride, configuration.resolutions[1]);
-        let f1 = g1.sample(parameters, p);
-
-        let g2 = Grid.Impl(g0.stride + g1.stride, configuration.resolutions[2]);
-        let f2 = g2.sample(parameters, p);
-
-        let f01 = concat<
-            InlineVector<float, 2 * Features>,
-            Grid.FeatureVector,
-            Grid.FeatureVector,
-            float,
-            Features,
-            Features,
-        >(f0, f1);
-        
-        let f012 = concat<
-            InlineVector<float, 3 * Features>,
-            InlineVector<float, 2 * Features>,
-            Grid.FeatureVector,
-            float,
-            2 * Features,
-            Features,
-        >(f01, f2);
-
-        return f012;
-    }
-}
 
 public struct Scene : IBoundedSignedDistanceField
 {
@@ -94,7 +24,7 @@ public struct Scene : IBoundedSignedDistanceField
     
     MLP mlp;
     Grid grid;
-    MultiLevelDenseGrid mldg;
+    MultiLevelDenseGrid<Features> mldg;
 
     // TODO: parameter, configuration, etc. properties here as well
 
@@ -116,7 +46,7 @@ public struct Scene : IBoundedSignedDistanceField
         {
             let input = InlineVector<float, 3>.fromVector(normalized(p));
             // let feature = grid.eval(grid.parameters, grid.configuration, input);
-            let feature = MultiLevelDenseGrid.eval(mldg.parameters, mldg.configuration, input);
+            let feature = mldg.eval<InlineVector<float, 3 * Features>>(mldg.parameters, mldg.configuration, input);
             let predicted = mlp.eval(mlp.parameters, feature);
             return predicted[0];
         }
@@ -187,7 +117,7 @@ float loss(
     {
         let input = InlineVector<float, 3>.fromVector(scene.normalized(p));
         // let feature = scene.grid.eval(gridParameters, scene.grid.configuration, input);
-        let feature = MultiLevelDenseGrid.eval(mldgParameters, scene.mldg.configuration, input);
+        let feature = scene.mldg.eval<InlineVector<float, 3 * Features>>(mldgParameters, scene.mldg.configuration, input);
         let predicted = scene.mlp.eval(mlpParameters, feature);
         return MSE<float>.eval(predicted, expected);
     }
@@ -222,31 +152,4 @@ void backward(uint3 tid : SV_DispatchThreadID)
         expectedBuffer[tid.x],
         boost
     );
-}
-
-// Optimization
-uniform Optimizer optimizer;
-uniform RWStructuredBuffer<Optimizer.State> optimizerStates;
-// TODO: one parameter block
-
-// TODO: general update method with extern struct for IOptimizable being updated...
-[shader("compute")]
-[numthreads(32, 1, 1)]
-void update_mlp(uint3 tid : SV_DispatchThreadID)
-{
-    scene.mlp.update(optimizer, optimizerStates[tid.x], tid.x);
-}
-
-[shader("compute")]
-[numthreads(32, 1, 1)]
-void update_grid(uint3 tid : SV_DispatchThreadID)
-{
-    scene.grid.update(optimizer, optimizerStates[tid.x], tid.x);
-}
-
-[shader("compute")]
-[numthreads(32, 1, 1)]
-void update_multi_level_grid(uint3 tid : SV_DispatchThreadID)
-{
-    scene.mldg.update(optimizer, optimizerStates[tid.x], tid.x);
 }

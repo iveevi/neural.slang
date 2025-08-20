@@ -16,3 +16,7 @@ class Adam(Optimizer):
             "beta2": self.beta2,
             "epsilon": self.epsilon,
         }
+
+    def slang_type(self):
+        # TODO: also alternative types
+        return "Adam<float>"

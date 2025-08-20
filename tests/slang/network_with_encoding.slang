@@ -13,7 +13,7 @@ typealias HiddenVec = InlineVector<float, Hidden>;
 typealias EncodedVec = InlineVector<float, Encoded>;
 
 // Network with frequency encoding: In -> [FrequencyEncoder] -> Encoded -> Hidden -> Hidden -> Hidden -> Out
-typealias Layer<int In, int Out> = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
+typealias Layer<int In, int Out> = FFLayer<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
 
 struct NetworkWithEncodingGlobals
 {
@@ -44,7 +44,7 @@ void computeMain(uint3 thread_id : SV_DispatchThreadID)
 
     let encoder = FrequencyEncoder<float, In, Levels>();
     
-    let ff1 = FeedForward<float, Encoded, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
+    let ff1 = FFLayer<float, Encoded, Hidden, StructuredBufferStorage<float>, ReLU<float>>(0, {});
     let ff2 = Layer<Hidden, Hidden>(0, {});
     let ff3 = Layer<Hidden, Hidden>(0, {});
     let ff4 = Layer<Hidden, Out>(0, {});

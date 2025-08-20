@@ -1,4 +1,4 @@
-implementing mlp;
+implementing ngp;
 
 public struct AddressBasedMLP<
     int In,
@@ -7,7 +7,7 @@ public struct AddressBasedMLP<
     int HiddenLayers,
     HiddenActivation,
     OutputActivation
-> : IMLP<float, In, Out>
+> : IOptimizable<float>
     where HiddenActivation : IActivation<float>
     where OutputActivation : IActivation<float>
 {
@@ -42,30 +42,30 @@ public struct AddressBasedMLP<
     }
 
     [BackwardDifferentiable]
-    public static OutputVec eval(Parameters parameterStorage, InputVec input)
+    public static OutputVec eval(Parameters params, InputVec input)
     {
         typealias HiddenVec = InlineVector<float, Hidden>;
 
         typealias StorageType = StructuredBufferStorage<float>;
-        typealias FirstLayer = FeedForward<float, In, Hidden, StorageType, HiddenActivation>;
-        typealias HiddenLayer = FeedForward<float, Hidden, Hidden, StorageType, HiddenActivation>;
-        typealias LastLayer = FeedForward<float, Hidden, Out, StorageType, OutputActivation>;
+        typealias FirstLayer = FFLayer<float, In, Hidden, StorageType, HiddenActivation>;
+        typealias HiddenLayer = FFLayer<float, Hidden, Hidden, StorageType, HiddenActivation>;
+        typealias LastLayer = FFLayer<float, Hidden, Out, StorageType, OutputActivation>;
 
         var offset = 0;
         
         let ff1 = FirstLayer(offset, {});
-        var hidden = ff1.eval<InputVec, HiddenVec>(parameterStorage, input);
+        var hidden = ff1.eval<InputVec, HiddenVec>(params, input);
         offset += (In + 1) * Hidden;
 
         [ForceUnroll]
         for (int i = 0; i < HiddenLayers; i++) {
             let ff = HiddenLayer(offset, {});
-            hidden = ff.eval<HiddenVec, HiddenVec>(parameterStorage, hidden);
+            hidden = ff.eval<HiddenVec, HiddenVec>(params, hidden);
             offset += (Hidden + 1) * Hidden;
         }
 
         let ffN = LastLayer(offset, {});
-        let output = ffN.eval<HiddenVec, OutputVec>(parameterStorage, hidden);
+        let output = ffN.eval<HiddenVec, OutputVec>(params, hidden);
 
         return output;
     }

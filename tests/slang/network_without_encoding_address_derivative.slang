@@ -29,10 +29,10 @@ ParameterBlock<NetworkWithoutEncodingAddressDerivativeGlobals> globals;
 [BackwardDifferentiable]
 OutputVec network_forward(StructuredBufferStorage<float> parameters, InputVec input)
 {
-    let ff1 = FeedForward<float, In, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer1Address, {});
-    let ff2 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer2Address, {});
-    let ff3 = FeedForward<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer3Address, {});
-    let ff4 = FeedForward<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(globals.layer4Address, {});
+    let ff1 = FFLayer<float, In, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer1Address, {});
+    let ff2 = FFLayer<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer2Address, {});
+    let ff3 = FFLayer<float, Hidden, Hidden, StructuredBufferStorage<float>, ReLU<float>>(globals.layer3Address, {});
+    let ff4 = FFLayer<float, Hidden, Out, StructuredBufferStorage<float>, ReLU<float>>(globals.layer4Address, {});
 
     let x1 = ff1.eval<InputVec, HiddenVec>(parameters, input);
     let x2 = ff2.eval<HiddenVec, HiddenVec>(parameters, x1);

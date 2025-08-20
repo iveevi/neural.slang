@@ -29,7 +29,7 @@ void computeMain(
     if (tid >= globals.count) return;
 
     let storage = StructuredBufferStorage<float>(globals.parameters);
-    let network = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>(globals.address, {});
+    let network = FFLayer<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>(globals.address, {});
     let input = InputVec(globals.input[tid]);
     let output = network.eval<InputVec, OutputVec>(storage, input);
     globals.output[tid] = output;

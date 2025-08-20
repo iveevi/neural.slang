@@ -9,7 +9,7 @@ typealias HiddenVec = InlineVector<float, Hidden>;
 typealias OutputVec = InlineVector<float, Out>;
 
 // Network with In -> Hidden -> Hidden -> Hidden -> Out layers - derivative version
-typealias Layer<int In, int Out> = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
+typealias Layer<int In, int Out> = FFLayer<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
 
 struct NetworkWithoutEncodingDerivativeGlobals
 {

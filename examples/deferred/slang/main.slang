@@ -1,11 +1,8 @@
 import camera;
 import neural;
-import network_with_addresses;
+import ngp;
 import shapes;
 import cmap;
-
-import mlp;
-import dense_grid;
 
 extern static const int Hidden;
 extern static const int HiddenLayers;
@@ -75,6 +72,7 @@ struct AreaLight
     }
 }
 
+// TODO: use PRG
 uniform Texture2D seedTexture;
 uniform SamplerState seedSampler;
 uniform float time;
@@ -116,6 +114,8 @@ float4 reference_fragment(VertexResult input) : SV_Target
 
     float shadow = query.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
     float ndotl = max(dot(normal, ray.Direction), 0.0);
+
+    // TODO: try multiple bounces... also a bigger scene?
 
     return float4(float3(shadow) * light.color(uv) * albedo * ndotl, 1.0);
 }
@@ -215,27 +215,4 @@ void backward(uint3 tid : SV_DispatchThreadID)
             boost
         );
     }
-}
-
-// Optimization
-typealias Optimizer = Adam<float>;
-
-uniform Optimizer optimizer;
-uniform RWStructuredBuffer<Optimizer.State> optimizerStates;
-
-[shader("compute")]
-[numthreads(32, 1, 1)]
-void update_mlp(uint3 tid : SV_DispatchThreadID)
-{
-    mlp.update(optimizer, optimizerStates[tid.x], tid.x);
-}
-
-[shader("compute")]
-[numthreads(32, 1, 1)]
-void update_grid(uint3 tid : SV_DispatchThreadID)
-{
-    if (isnan(grid.gradients.buffer[tid.x]))
-        return;
-
-    grid.update(optimizer, optimizerStates[tid.x], tid.x);
 }

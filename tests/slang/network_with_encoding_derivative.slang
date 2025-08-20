@@ -13,7 +13,7 @@ typealias HiddenVec = InlineVector<float, Hidden>;
 typealias EncodedVec = InlineVector<float, Encoded>;
 
 // Network with frequency encoding derivative: In -> [FrequencyEncoder] -> Encoded -> Hidden -> Hidden -> Hidden -> Out
-typealias Layer<int In, int Out> = FeedForward<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
+typealias Layer<int In, int Out> = FFLayer<float, In, Out, StructuredBufferStorage<float>, ReLU<float>>;
 
 struct NetworkWithEncodingDerivativeGlobals
 {
