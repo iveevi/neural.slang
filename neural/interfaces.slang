@@ -103,9 +103,8 @@ public interface IActivation<T>
 public interface ILoss<T>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
-    // TODO: this might as well be static
-    [NoDiffThis, BackwardDifferentiable]
-    public T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
+    [BackwardDifferentiable]
+    public static T eval<int N, Vector>(Vector predicted, no_diff Vector expected)
         where Vector : IVector<T, N>;
 }
 

@@ -181,8 +181,6 @@ float loss(
     no_diff float3 p,
     no_diff float s)
 {
-    static const let mse = MeanSquaredError<float>();
-
     let expected = InlineVector<float, 1>.fromVector(s);
 
     if (scene.inBounds(p))
@@ -191,7 +189,7 @@ float loss(
         // let feature = scene.grid.eval(gridParameters, scene.grid.configuration, input);
         let feature = MultiLevelDenseGrid.eval(mldgParameters, scene.mldg.configuration, input);
         let predicted = scene.mlp.eval(mlpParameters, feature);
-        return mse.eval(predicted, expected);
+        return MSE<float>.eval(predicted, expected);
     }
     else
     {
