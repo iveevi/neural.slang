@@ -51,7 +51,7 @@ public interface IVector<T, int N> : IDifferentiable
     }
 
     // Apply from a storage
-    public OutputVector apply<int OutputSize, Storage, OutputVector>(
+    public OutputVector apply<int OutputSize, bool Bias, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address
     )
@@ -130,8 +130,10 @@ public interface IEncoder<T, int In, int Out>
 public interface ILearnableEncoder<T, int In, int Out, Storage>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
+    where Storage.Differential == Storage
 {
     public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
         where InputVector : IVector<T, In>
-        where OutputVector : IVector<T, Out>;
+        where OutputVector : IVector<T, Out>
+        where OutputVector.Differential == OutputVector;
 }

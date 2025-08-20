@@ -318,7 +318,7 @@ public extension<T, int N> CoopVector<T, N> : IVector<T, N>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     [BackwardDerivative(applyBwd)]
-    public OutputVector apply<int OutputSize, Storage, OutputVector>(
+    public OutputVector apply<int OutputSize, bool Bias, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address)
         where Storage : IStorage<T>
@@ -330,7 +330,7 @@ public extension<T, int N> CoopVector<T, N> : IVector<T, N>
         return OutputVector(T(0.0));
     }
 
-    static void applyBwd<int OutputSize, Storage, OutputVector>(
+    static void applyBwd<int OutputSize, bool Bias, Storage, OutputVector>(
         inout DifferentialPair<This> dthis,
         DifferentialPtrPair<Storage> dstorage,
         Storage.Address address,

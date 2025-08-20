@@ -62,7 +62,7 @@ class Optimizable(Object):
             globals.optimizable.update(globals.optimizer, globals.states[tid.x], tid.x);
         }}
         """
-        module = device.load_module_from_source("update_specialization", specialization_source)
+        module = device.load_module_from_source("update", specialization_source)
         pipeline = device.create_compute_pipeline(device.link_program(
             modules=[module],
             entry_points=[module.entry_point("update")],

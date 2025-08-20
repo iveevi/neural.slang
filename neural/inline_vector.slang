@@ -398,7 +398,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     [BackwardDerivative(applyBwd)]
-    public OutputVector apply<int OutputSize, Storage, OutputVector>(
+    public OutputVector apply<int OutputSize, bool Bias, Storage, OutputVector>(
         Storage storage,
         no_diff Storage.Address address)
         where Storage : IStorage<T>
@@ -408,11 +408,14 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
     {
         var output = OutputVector(T(0.0));
 
-        [ForceUnroll]
-        for (int i = 0; i < OutputSize; i++)
+        if (Bias)
         {
-            let biasOffset = Storage.getOffset(address, N * OutputSize + i);
-            output[i] = storage.read(biasOffset);
+            [ForceUnroll]
+            for (int i = 0; i < OutputSize; i++)
+            {
+                let biasOffset = Storage.getOffset(address, N * OutputSize + i);
+                output[i] = storage.read(biasOffset);
+            }
         }
 
         // TODO: transpose if N >> OutputSize or OutputSize < 4
@@ -431,7 +434,7 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         return output;
     }
 
-    static void applyBwd<int OutputSize, Storage, OutputVector>(
+    static void applyBwd<int OutputSize, bool Bias, Storage, OutputVector>(
         inout DifferentialPair<This> dthis,
         DifferentialPtrPair<Storage> dstorage,
         Storage.Address address,
@@ -474,12 +477,15 @@ public extension<T, int N> InlineVector<T, N> : IVector<T, N>
         }
 
         // Derivative of the bias is the same as the output differential
-        [ForceUnroll]
-        for (int j = 0; j < OutputSize; j++)
+        if (Bias)
         {
-            let dout = __slang_noop_cast<OutputVector>(doutput)[j];
-            let biasOffset = Storage.getOffset(address, N * OutputSize + j);
-            __slang_noop_cast<Storage>(dstorage.d).add(biasOffset, dout);
+            [ForceUnroll]
+            for (int j = 0; j < OutputSize; j++)
+            {
+                let dout = __slang_noop_cast<OutputVector>(doutput)[j];
+                let biasOffset = Storage.getOffset(address, N * OutputSize + j);
+                __slang_noop_cast<Storage>(dstorage.d).add(biasOffset, dout);
+            }
         }
 
         dthis = DifferentialPair<This>(dthis.p, d);

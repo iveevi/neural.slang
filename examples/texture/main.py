@@ -1,4 +1,3 @@
-import argparse
 import numpy as np
 import seaborn as sns
 from scipy.ndimage import gaussian_filter
@@ -7,17 +6,67 @@ import slangpy as spy
 from PIL import Image
 from common import *
 from ..util import *
+from ..networks.addresses import Network, TrainingPipeline
+from ngp import AddressBasedMLP, Adam
 
 
 HERE = ROOT / "examples" / "texture"
 
 
-def main(Network, TrainingPipeline, RenderingPipeline):
+class RenderingPipeline:
+    @staticmethod
+    def load_specialization_module(device: spy.Device, mlp: AddressBasedMLP, levels: int):
+        source = f"""
+        export static const int Hidden = {mlp.hidden};
+        export static const int HiddenLayers = {mlp.hidden_layers};
+        export static const int Levels = {levels};
+        """
+        return device.load_module_from_source("specialization", source)
+
+    def __init__(self, device: spy.Device, mlp: AddressBasedMLP, levels: int):
+        SOURCE = HERE / "slang" / "main.slang"
+        
+        self.device = device
+        self.module = device.load_module(str(SOURCE))
+        self.specialization_module = self.load_specialization_module(device, mlp, levels)
+
+        self.render_neural_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_neural")
+        self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
+
+    def render_neural(self, mlp: AddressBasedMLP, target_texture: spy.Texture):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.render_neural_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp.dict()
+            cursor.targetTexture = target_texture
+            cursor.targetResolution = (target_texture.width, target_texture.height)
+            cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def backward(self, mlp: AddressBasedMLP, samples: spy.Buffer, expected: spy.Buffer, sample_count: int):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.backward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp.dict()
+            cursor.samples = samples
+            cursor.expected = expected
+            cursor.boost = 1.0 / sample_count
+            cmd.dispatch(thread_count=[sample_count, 1, 1])
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
+def main():
     image = Image.open(ROOT / "resources" / "yellowstone.png")
     image = np.array(image)
     image = image[..., :3].astype(np.float32) / 255.0
 
     # Bilinear sampling
+    # TODO: just pass texture...
     def sample(uv: np.ndarray) -> np.ndarray:
         x = uv[..., 1] * (image.shape[1] - 1)
         y = uv[..., 0] * (image.shape[0] - 1)
@@ -39,24 +88,21 @@ def main(Network, TrainingPipeline, RenderingPipeline):
 
     device = create_device()
 
-    network = Network(device,
-        hidden=64,
-        hidden_layers=2,
-        levels=8,
-        input=2,
-        output=3,
-    )
+    levels = 8
+    optimizer = Adam()
+    mlp = AddressBasedMLP.new(device, hidden=64, hidden_layers=2, input=4 * levels, output=3)
+    mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
 
-    training_pipeline = TrainingPipeline(device, network)
-    rendering_pipeline = RenderingPipeline(device, network)
+    # training_pipeline = TrainingPipeline(device, network)
+    pipeline = RenderingPipeline(device, mlp, 8)
 
     app = App(device)
 
     target_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.rgba8_unorm,
-        width=256,
-        height=256,
+        width=app.width,
+        height=app.height,
         usage=spy.TextureUsage.shader_resource | spy.TextureUsage.unordered_access,
         data=None,
     )
@@ -65,55 +111,25 @@ def main(Network, TrainingPipeline, RenderingPipeline):
     sample_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 2), dtype=np.float32), 2)
     color_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 3), dtype=np.float32), 3)
 
-    history = []
-
     def loop(frame: Frame):
-        rendering_pipeline.render_neural(network, target_texture)
-
-        # frame.cmd.blit(frame.image, target_texture)
-        # frame.cmd.set_texture_state(frame.image, spy.ResourceState.present)
+        pipeline.render_neural(mlp, target_texture)
 
         samples = np.random.rand(SAMPLE_COUNT, 2).astype(np.float32)
         colors = sample(samples).astype(np.float32)
         sample_buffer.copy_from_numpy(samples)
-
-        training_pipeline.forward(network, sample_buffer, color_buffer)
-        predicted = color_buffer.to_numpy().view(np.float32).reshape(SAMPLE_COUNT, 3)
-        
-        loss = np.mean(np.square(predicted - colors))
-        history.append(loss)
-
         color_buffer.copy_from_numpy(colors)
 
-        training_pipeline.backward(network, sample_buffer, color_buffer)
-        training_pipeline.optimize(network)
-        
+        pipeline.backward(mlp, sample_buffer, color_buffer, SAMPLE_COUNT)
+
+        mlp.update(optimizer, mlp_optimizer_states)
+
         frame.blit(target_texture)
 
     app.run(loop)
 
-    # Plot loss
-    history = np.array(history)
-    sns.lineplot(history, alpha=0.5, color="green")
-    sns.lineplot(gaussian_filter(history, 5), linewidth=2.5, label="Slang", color="green")
-    plt.yscale("log")
-    plt.legend()
-    plt.show()
-
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--network", type=str, choices=[
-        "addresses",
-    ], default="addresses")
-    args = parser.parse_args()
-
     sns.set_theme()
     sns.set_palette("pastel")
 
-    match args.network:
-        case "addresses":
-            from .addresses import Network, TrainingPipeline, RenderingPipeline
-            main(Network, TrainingPipeline, RenderingPipeline)
-        case _:
-            raise ValueError(f"Invalid network: {args.network}")
+    main()

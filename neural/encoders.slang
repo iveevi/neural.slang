@@ -5,8 +5,7 @@ implementing neural;
 //////////////////////
 
 public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     public static const int In = N;
     public static const int Out = N;
@@ -28,8 +27,7 @@ public struct IdentityEncoder<T, int N> : IEncoder<T, N, N>
 /////////////////////////
 
 public struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 2 * Levels + 1>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(InputVector input)
@@ -47,8 +45,7 @@ public struct SphericalHarmonicsEncoder<T, int Levels> : IEncoder<T, 3, 2 * Leve
 ///////////////////////
 
 public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Levels * Dim>
-    where T : __BuiltinFloatingPointType
-    where T : IArithmeticAtomicable
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
 {
     public static const int In = Dim;
     public static const int Out = 2 * Levels * Dim;
@@ -107,6 +104,26 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
         }
 
         dinput = DifferentialPair<InputVector>(p, __slang_noop_cast<InputVector.Differential>(d));
+    }
+}
+
+public struct RandomFourierEncoder<T, int Dim, int Features, Storage> : ILearnableEncoder<T, Dim, Features, Storage>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+    where Storage : IStorage<T>
+    where Storage.Differential == Storage
+{
+    public static const int In = Dim;
+    public static const int Out = Features;
+
+    Storage.Address transform;
+
+    [BackwardDifferentiable]
+    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+        where InputVector : IVector<T, Dim>
+        where OutputVector : IVector<T, Features>
+        where OutputVector.Differential == OutputVector
+    {
+        return input.apply<Features, false, Storage, OutputVector>(storage, transform).sin();
     }
 }
 
