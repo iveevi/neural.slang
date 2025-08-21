@@ -4,7 +4,7 @@ implementing neural;
 // Normal feed forward //
 /////////////////////////
 
-public struct FFLayer<T, int In, int Out, Storage, Activation>
+public struct FFLayer<T, int In, int Out, Storage, Activation> : ILayer<T, In, Out, Storage>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
     where Storage.Differential == Storage
@@ -34,7 +34,7 @@ public struct FFLayer<T, int In, int Out, Storage, Activation>
 // Residual feed forward //
 ///////////////////////////
 
-public struct ResidualFFLayer<T, int Size, Storage, Activation>
+public struct ResidualFFLayer<T, int Size, Storage, Activation> : ILayer<T, Size, Size, Storage>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
     where Storage.Differential == Storage

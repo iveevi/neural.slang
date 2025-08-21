@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import slangpy as spy
 import trimesh
+import time
 
 
 HERE = ROOT / "examples" / "deferred"
@@ -31,7 +32,7 @@ class RenderingPipeline:
         self.network_type = self.module.layout.find_type_by_name("network")
         print("network_type", self.network_type)
 
-        # Reference pipeline
+        # Reference rendering pipeline
         self.reference_pipeline = self.create_rasterization_pipeline(
             device,
             "reference_fragment",
@@ -40,6 +41,7 @@ class RenderingPipeline:
             ]
         )
 
+        # G-buffer pipeline
         self.gbuffer_pipeline = self.create_rasterization_pipeline(
             device,
             "gbuffer_fragment",
@@ -48,14 +50,20 @@ class RenderingPipeline:
                 { "format": spy.Format.rgba32_float },
                 # Albedo
                 { "format": spy.Format.rgba32_float },
+                # Normal
+                { "format": spy.Format.rgba32_float },
             ]
         )
 
         # Neural shading pipeline
         self.neural_shading_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "deferred_neural_shading")
+        self.neural_illumination_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "deferred_neural_illumination")
 
         # Backward pass pipeline
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
+
+        # Update pipeline
+        self.update_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "update_stable")
 
     def create_rasterization_pipeline(self, device: spy.Device, fragment_shader: str, targets: list[dict[str, spy.Format]]):
         program = device.link_program(
@@ -149,8 +157,7 @@ class RenderingPipeline:
                          diffuse_texture: spy.Texture,
                          diffuse_sampler: spy.Sampler,
                          seed_texture: spy.Texture,
-                         seed_sampler: spy.Sampler,
-                         time: float):
+                         seed_sampler: spy.Sampler):
         render_pass_args: Any = self.create_render_pass_args([target], depth_target)
         
         command_encoder = self.device.create_command_encoder()
@@ -166,7 +173,8 @@ class RenderingPipeline:
             cursor.blas = blas
             cursor.seedTexture = seed_texture
             cursor.seedSampler = seed_sampler
-            cursor.time = time
+            cursor.targetResolution = spy.float2(target[0].width, target[0].height)
+            cursor.time = time.perf_counter()
             
             state = self.create_render_state(mesh, target)
             cmd.set_render_state(state)
@@ -185,8 +193,13 @@ class RenderingPipeline:
                         diffuse_texture: spy.Texture,
                         diffuse_sampler: spy.Sampler,
                         gbuffer_position: tuple[spy.Texture, spy.TextureView],
-                        gbuffer_albedo: tuple[spy.Texture, spy.TextureView]):
-        render_pass_args: Any = self.create_render_pass_args([gbuffer_position, gbuffer_albedo], depth_target)
+                        gbuffer_albedo: tuple[spy.Texture, spy.TextureView],
+                        gbuffer_normal: tuple[spy.Texture, spy.TextureView]):
+        render_pass_args: Any = self.create_render_pass_args(
+            [gbuffer_position, gbuffer_albedo, gbuffer_normal],
+            depth_target
+        )
+
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_render_pass(render_pass_args) as cmd:
@@ -210,7 +223,8 @@ class RenderingPipeline:
                               grid: DenseGrid,
                               target: tuple[spy.Texture, spy.TextureView],
                               gbuffer_position: tuple[spy.Texture, spy.TextureView],
-                              gbuffer_albedo: tuple[spy.Texture, spy.TextureView]):
+                              gbuffer_albedo: tuple[spy.Texture, spy.TextureView],
+                              gbuffer_normal: tuple[spy.Texture, spy.TextureView]):
         command_encoder = self.device.create_command_encoder()
         
         with command_encoder.begin_compute_pass() as cmd:
@@ -220,9 +234,32 @@ class RenderingPipeline:
             cursor.grid = grid.dict()
             cursor.gbufferPositionTexture = gbuffer_position[0]
             cursor.gbufferAlbedoTexture = gbuffer_albedo[0]
+            cursor.gbufferNormalTexture = gbuffer_normal[0]
             cursor.targetTexture = target[0]
             cmd.dispatch(thread_count=(target[0].width, target[0].height, 1))
             
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def render_neural_illumination(self,
+                              mlp: MLP,
+                              grid: DenseGrid,
+                              target: tuple[spy.Texture, spy.TextureView],
+                              gbuffer_position: tuple[spy.Texture, spy.TextureView],
+                              gbuffer_albedo: tuple[spy.Texture, spy.TextureView],
+                              gbuffer_normal: tuple[spy.Texture, spy.TextureView]):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.neural_illumination_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp.dict()
+            cursor.grid = grid.dict()
+            cursor.gbufferPositionTexture = gbuffer_position[0]
+            cursor.gbufferAlbedoTexture = gbuffer_albedo[0]
+            cursor.gbufferNormalTexture = gbuffer_normal[0]
+            cursor.targetTexture = target[0]
+            cmd.dispatch(thread_count=(target[0].width, target[0].height, 1))
+
         self.device.submit_command_buffer(command_encoder.finish())
 
     def backward(self,
@@ -231,6 +268,7 @@ class RenderingPipeline:
                  reference_texture: spy.Texture,
                  gbuffer_position: tuple[spy.Texture, spy.TextureView],
                  gbuffer_albedo: tuple[spy.Texture, spy.TextureView],
+                 gbuffer_normal: tuple[spy.Texture, spy.TextureView],
                  boost: float):
         command_encoder = self.device.create_command_encoder()
         
@@ -242,8 +280,26 @@ class RenderingPipeline:
             cursor.referenceTexture = reference_texture
             cursor.gbufferPositionTexture = gbuffer_position[0]
             cursor.gbufferAlbedoTexture = gbuffer_albedo[0]
+            cursor.gbufferNormalTexture = gbuffer_normal[0]
             cursor.boost = boost
             cmd.dispatch(thread_count=(gbuffer_position[0].width, gbuffer_position[0].height, 1))
+            
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def update_stable(self,
+                      stable_parameters: spy.Buffer,
+                      trained_parameters: spy.Buffer,
+                      parameter_count: int,
+                      eta: float):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.update_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.stableParameters = stable_parameters
+            cursor.trainedParameters = trained_parameters
+            cursor.eta = eta
+            cmd.dispatch(thread_count=(parameter_count, 1, 1))
             
         self.device.submit_command_buffer(command_encoder.finish())
 
@@ -311,17 +367,51 @@ def build_tlas(device: spy.Device, blas: spy.AccelerationStructure):
 
     return tlas
 
+
+def generate_blue_noise_texture(size: int) -> np.ndarray:
+    from scipy.ndimage import gaussian_filter
+    from scipy.ndimage import distance_transform_edt
+    
+    white_noise = np.random.rand(size, size).astype(np.float32)
+    
+    sigma = size / 32
+    low_freq = gaussian_filter(white_noise, sigma, mode='wrap')
+    blue_noise = white_noise - low_freq
+    
+    blue_noise = (blue_noise - blue_noise.min()) / (blue_noise.max() - blue_noise.min())
+    
+    threshold = 0.5
+    dithered = (blue_noise > threshold).astype(np.float32)
+    
+    dist_field = distance_transform_edt(1 - dithered)
+    dist_field = np.minimum(dist_field, distance_transform_edt(dithered))
+    
+    if dist_field.max() > 0:
+        dist_field = dist_field / dist_field.max()
+    
+    result = (dist_field * 0.7 + white_noise * 0.3) % 1.0
+    result = gaussian_filter(result, 0.5, mode='wrap')
+    result = (result - result.min()) / (result.max() - result.min())
+    return result.astype(np.float32)
+
+
 def main():
     device = create_device()
 
     optimizer = Adam(alpha=1e-3)
-    mlp = AddressBasedMLP.new(device, hidden=64, hidden_layers=2, input=8, output=3)
-    # TODO: multires grid...
-    grid = DenseGrid.new(device, dimension=3, features=8, resolution=32)
-    mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
-    grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
     
-    rendering_pipeline = RenderingPipeline(device, mlp)
+    mlp_stable = AddressBasedMLP.new(device, hidden=64, hidden_layers=3, input=11, output=3)
+    # TODO: multires grid...
+    grid_stable = DenseGrid.new(device, dimension=3, features=8, resolution=64)
+
+    mlp_train = AddressBasedMLP.new(device, hidden=64, hidden_layers=3, input=11, output=3)
+    # TODO: multires grid...
+    grid_train = DenseGrid.new(device, dimension=3, features=8, resolution=64)
+
+    mlp_optimizer_states = mlp_train.alloc_optimizer_states(device, optimizer)
+    grid_optimizer_states = grid_train.alloc_optimizer_states(device, optimizer)
+    
+    rendering_pipeline = RenderingPipeline(device, mlp_train)
     
     assert device.has_feature(spy.Feature.rasterization)
     
@@ -350,30 +440,51 @@ def main():
     blas = mesh.blas(device)
     tlas = build_tlas(device, blas)
     
-    show_reference = True
     pause_orbit = False
+    show_mode = "reference"
+    vertical = 0.0
     
     def keyboard_hook(event: spy.KeyboardEvent):
+        nonlocal show_mode
+        nonlocal pause_orbit
+        nonlocal vertical
         if event.type == spy.KeyboardEventType.key_press:
             if event.key == spy.KeyCode.tab:
-                nonlocal show_reference
-                show_reference = not show_reference
+                match show_mode:
+                    case "reference":
+                        show_mode = "neural_shading"
+                    case "neural_shading":
+                        show_mode = "neural_illumination"
+                    case "neural_illumination":
+                        show_mode = "reference"
+                    case _:
+                        show_mode = "reference"
+            if event.key == spy.KeyCode.key1:
+                show_mode = "reference"
+            if event.key == spy.KeyCode.key2:
+                show_mode = "neural_shading"
+            if event.key == spy.KeyCode.key3:
+                show_mode = "neural_illumination"
             if event.key == spy.KeyCode.space:
-                nonlocal pause_orbit
                 pause_orbit = not pause_orbit
+        elif event.type == spy.KeyboardEventType.key_repeat:
+            if event.key == spy.KeyCode.up:
+                vertical += 0.01
+            if event.key == spy.KeyCode.down:
+                vertical -= 0.01
 
     app = App(device, keyboard_hook=keyboard_hook)
 
-    # Random seeds
-    seeds = np.random.rand(512, 512).astype(np.float32)
+    # Generate blue noise texture for better sampling patterns
+    seed_resolution = 1024
 
     seed_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
         format=spy.Format.r32_float,
-        width=512,
-        height=512,
+        width=seed_resolution,
+        height=seed_resolution,
         usage=spy.TextureUsage.shader_resource,
-        data=seeds,
+        data=generate_blue_noise_texture(seed_resolution),
     )
 
     seed_sampler = device.create_sampler(
@@ -390,12 +501,14 @@ def main():
     texture, texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
     gb_position_texture, gb_position_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
     gb_albedo_texture, gb_albedo_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
+    gb_normal_texture, gb_normal_texture_view = alloc_target_texture(device, normal_resolution, normal_resolution)
 
     # Training resources
     train_resolution = 256
     train_ref_texture, train_ref_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
     train_gb_position_texture, train_gb_position_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
     train_gb_albedo_texture, train_gb_albedo_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
+    train_gb_normal_texture, train_gb_normal_texture_view = alloc_target_texture(device, train_resolution, train_resolution)
 
     depth_texture = device.create_texture(
         type=spy.TextureType.texture_2d,
@@ -445,8 +558,7 @@ def main():
         orbit_radius = mesh_size * 1.2  # Orbit radius based on mesh size
         camera.transform.position = mesh_center + orbit_radius * np.array(
             (np.cos(time),
-            # 0.2 * np.sin(3 * time),
-            0.0,
+            vertical,
             np.sin(time))
         )
         camera.transform.look_at(mesh_center)
@@ -477,7 +589,6 @@ def main():
             sampler,
             seed_texture,
             seed_sampler,
-            sample_count,
         )
 
         # Prepare inputs for neural shading
@@ -489,20 +600,22 @@ def main():
             sampler,
             (train_gb_position_texture, train_gb_position_texture_view),
             (train_gb_albedo_texture, train_gb_albedo_texture_view),
+            (train_gb_normal_texture, train_gb_normal_texture_view),
         )
 
         # Backward pass
         rendering_pipeline.backward(
-            mlp,
-            grid,
+            mlp_train,
+            grid_train,
             train_ref_texture,
             (train_gb_position_texture, train_gb_position_texture_view),
             (train_gb_albedo_texture, train_gb_albedo_texture_view),
+            (train_gb_normal_texture, train_gb_normal_texture_view),
             boost=(1.0 / (train_ref_texture.width * train_ref_texture.height))
         )
         
         # Rendering
-        if show_reference:
+        if show_mode == "reference":
             rendering_pipeline.render_reference(
                 camera,
                 mesh,
@@ -513,7 +626,6 @@ def main():
                 sampler,
                 seed_texture,
                 seed_sampler,
-                sample_count,
             )
         else:
             rendering_pipeline.render_gbuffer(
@@ -524,24 +636,37 @@ def main():
                 sampler,
                 (gb_position_texture, gb_position_texture_view),
                 (gb_albedo_texture, gb_albedo_texture_view),
+                (gb_normal_texture, gb_normal_texture_view),
             )
 
-            rendering_pipeline.render_neural_shading(
-                mlp,
-                grid,
-                (texture, texture_view),
-                (gb_position_texture, gb_position_texture_view),
-                (gb_albedo_texture, gb_albedo_texture_view),
-            )
+            if show_mode == "neural_shading":
+                rendering_pipeline.render_neural_shading(
+                    mlp_stable,
+                    grid_stable,
+                    (texture, texture_view),
+                    (gb_position_texture, gb_position_texture_view),
+                    (gb_albedo_texture, gb_albedo_texture_view),
+                    (gb_normal_texture, gb_normal_texture_view),
+                )
+            elif show_mode == "neural_illumination":
+                rendering_pipeline.render_neural_illumination(
+                    mlp_stable,
+                    grid_stable,
+                    (texture, texture_view),
+                    (gb_position_texture, gb_position_texture_view),
+                    (gb_albedo_texture, gb_albedo_texture_view),
+                    (gb_normal_texture, gb_normal_texture_view),
+                )
 
         # Optimize
-        # rendering_pipeline.update_mlp(mlp, optimizer, mlp_optimizer_states)
-        # rendering_pipeline.update_grid(grid, optimizer, grid_optimizer_states)
-        mlp.update(optimizer, mlp_optimizer_states)
-        grid.update(optimizer, grid_optimizer_states)
+        mlp_train.update(optimizer, mlp_optimizer_states)
+        grid_train.update(optimizer, grid_optimizer_states)
 
-        # TODO: use weighted average technique to mitigate temporal flickering
-        
+        # Update stable parameters
+        eta = 0.01
+        rendering_pipeline.update_stable(mlp_stable.parameter_buffer, mlp_train.parameter_buffer, mlp_stable.parameter_count, eta=eta)
+        rendering_pipeline.update_stable(grid_stable.parameter_buffer, grid_train.parameter_buffer, grid_stable.parameter_count, eta=eta)
+
         # Display
         frame.blit(texture)
     

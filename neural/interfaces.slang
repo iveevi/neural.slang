@@ -99,6 +99,18 @@ public interface IActivation<T>
         where Vector.Differential == Vector;
 }
 
+// Network layer interface
+public interface ILayer<T, int In, int Out, Storage>
+    where T : __BuiltinFloatingPointType & IArithmeticAtomicable
+    where Storage : IStorage<T>
+{
+    [NoDiffThis, BackwardDifferentiable]
+    public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
+        where InputVector : IVector<T, In>
+        where OutputVector : IVector<T, Out>
+        where OutputVector.Differential == OutputVector;
+}
+
 // Loss function interface
 public interface ILoss<T>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
