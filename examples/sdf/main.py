@@ -15,34 +15,33 @@ HERE = ROOT / "examples" / "sdf"
 # TODO: decorators for extracting each part of the pipeline -- reflection to get the global variables
 class Pipeline:
     @staticmethod
-    def load_specialization_module(device: spy.Device, mlp: MLP, grid: Grid):
+    def load_specialization_module(device: spy.Device, mlp: MLP, mldg: MultiLevelDenseGrid):
         source = f"""
         export static const int Hidden = {mlp.hidden};
         export static const int HiddenLayers = {mlp.hidden_layers};
-        export static const int Features = {grid.features};
+        export static const int Features = {mldg.features};
         """
         return device.load_module_from_source("specialization", source)
 
-    def __init__(self, device: spy.Device, mlp: MLP, grid: Grid):
+    def __init__(self, device: spy.Device, mlp: MLP, mldg: MultiLevelDenseGrid):
         SOURCE = HERE / "slang" / "main.slang"
         
         self.device = device
         self.module = device.load_module(str(SOURCE))
-        self.specialization_module = self.load_specialization_module(device, mlp, grid)
+        self.specialization_module = self.load_specialization_module(device, mlp, mldg)
 
         self.render_heatmap_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_heatmap")
         self.render_normal_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_normal")
 
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
         
-    def render_heatmap(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_heatmap(self, mlp: MLP, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_heatmap_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.scene.mlp = mlp.dict()
-            cursor.scene.grid = grid.dict()
             cursor.scene.mldg = mldg.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
@@ -51,14 +50,13 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
         
-    def render_normal(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
+    def render_normal(self, mlp: MLP, mldg: MultiLevelDenseGrid, rayframe: RayFrame, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_normal_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.scene.mlp = mlp.dict()
-            cursor.scene.grid = grid.dict()
             cursor.scene.mldg = mldg.dict()
             cursor.rayFrame = rayframe.dict()
             cursor.targetTexture = target_texture
@@ -67,14 +65,13 @@ class Pipeline:
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def backward(self, mlp: MLP, grid: Grid, mldg: MultiLevelDenseGrid, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, loss_buffer: spy.Buffer, sample_count: int):
+    def backward(self, mlp: MLP, mldg: MultiLevelDenseGrid, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, loss_buffer: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.backward_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.scene.mlp = mlp.dict()
-            cursor.scene.grid = grid.dict()
             cursor.scene.mldg = mldg.dict()
             cursor.inputBuffer = input_buffer
             cursor.expectedBuffer = expected_buffer
@@ -90,13 +87,11 @@ def main():
 
     features = 2
     mlp = AddressBasedMLP.new(device, hidden=32, hidden_layers=2, input=3 * features, output=1)
-    grid = DenseGrid.new(device, dimension=3, features=features, resolution=16)
     mldg = MultiLevelDenseGrid.new(device, dimension=3, features=features, resolutions=[16, 32, 64])
-    rendering_pipeline = Pipeline(device, mlp, grid)
+    rendering_pipeline = Pipeline(device, mlp, mldg)
 
     optimizer = Adam(alpha=1e-2)
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
-    grid_optimizer_states = grid.alloc_optimizer_states(device, optimizer)
     mldg_optimizer_states = mldg.alloc_optimizer_states(device, optimizer)
 
     # Allocate loss buffer
@@ -158,9 +153,9 @@ def main():
 
         # Rendering
         if render_heatmap:
-            rendering_pipeline.render_heatmap(mlp, grid, mldg, camera.rayframe(), texture)
+            rendering_pipeline.render_heatmap(mlp, mldg, camera.rayframe(), texture)
         else:
-            rendering_pipeline.render_normal(mlp, grid, mldg, camera.rayframe(), texture)
+            rendering_pipeline.render_normal(mlp, mldg, camera.rayframe(), texture)
 
         # Training
         samples = (2 * np.random.rand(SAMPLE_COUNT, 3).astype(np.float32) - 1)
@@ -169,14 +164,13 @@ def main():
         sdf = target_sdf(samples)
         sdf_buffer.copy_from_numpy(sdf)
 
-        rendering_pipeline.backward(mlp, grid, mldg, sample_buffer, sdf_buffer, loss_buffer, SAMPLE_COUNT)
+        rendering_pipeline.backward(mlp, mldg, sample_buffer, sdf_buffer, loss_buffer, SAMPLE_COUNT)
 
         loss = loss_buffer.to_numpy().view(np.float32).mean()
         history.append(loss)
         alphas.append(optimizer.alpha)
 
         mlp.update(optimizer, mlp_optimizer_states)
-        grid.update(optimizer, grid_optimizer_states)
         mldg.update(optimizer, mldg_optimizer_states)
 
         frame.blit(texture)

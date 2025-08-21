@@ -14,7 +14,6 @@ extern static const int Features = 2;
 
 // typealias MLP = AddressBasedMLP<Features, 1, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
 typealias MLP = AddressBasedMLP<3 * Features, 1, Hidden, HiddenLayers, LeakyReLU<float>, Identity<float>>;
-typealias Grid = DenseGrid<3, Features>;
 typealias Optimizer = Adam<float>;
 
 public struct Scene : IBoundedSignedDistanceField
@@ -22,7 +21,6 @@ public struct Scene : IBoundedSignedDistanceField
     static const let box = Box(float3(-1, -1, -1), float3(1, 1, 1));
     
     MLP mlp;
-    Grid grid;
     MultiLevelDenseGrid<Features> mldg;
 
     // TODO: parameter, configuration, etc. properties here as well
@@ -44,7 +42,6 @@ public struct Scene : IBoundedSignedDistanceField
         if (inBounds(p))
         {
             let input = InlineVector<float, 3>.fromVector(normalized(p));
-            // let feature = grid.eval(grid.parameters, grid.configuration, input);
             let feature = mldg.eval<InlineVector<float, 3 * Features>>(mldg.parameters, mldg.configuration, input);
             let predicted = mlp.eval(mlp.parameters, feature);
             return predicted[0];
@@ -105,7 +102,6 @@ void render_normal(uint3 tid : SV_DispatchThreadID)
 [BackwardDifferentiable]
 float loss(
     MLP.Parameters mlpParameters,
-    Grid.Parameters gridParameters,
     StructuredBufferStorage<float> mldgParameters,
     no_diff float3 p,
     no_diff float s)
@@ -115,7 +111,6 @@ float loss(
     if (scene.inBounds(p))
     {
         let input = InlineVector<float, 3>.fromVector(scene.normalized(p));
-        // let feature = scene.grid.eval(gridParameters, scene.grid.configuration, input);
         let feature = scene.mldg.eval<InlineVector<float, 3 * Features>>(mldgParameters, scene.mldg.configuration, input);
         let predicted = scene.mlp.eval(mlpParameters, feature);
         return MSE<float>.eval(predicted, expected);
@@ -137,7 +132,6 @@ void backward(uint3 tid : SV_DispatchThreadID)
 {
     lossBuffer[tid.x] = loss(
         scene.mlp.parameters,
-        scene.grid.parameters,
         scene.mldg.parameters,
         inputBuffer[tid.x],
         expectedBuffer[tid.x]
@@ -145,7 +139,6 @@ void backward(uint3 tid : SV_DispatchThreadID)
 
     bwd_diff(loss)(
         scene.mlp.dual,
-        scene.grid.dual,
         scene.mldg.dual,
         inputBuffer[tid.x],
         expectedBuffer[tid.x],

@@ -41,9 +41,9 @@ python -m examples.<example_name>.main
 
 | Directory | Description |
 |-----------|-------------|
-| [neural](neural) | Core neural network framework modules implementing layers, activations, optimizers, and losses in Slang |
-| [ngp](ngp) | Neural Graphics Primitives implementation including dense grids and multi-level feature grids |
-| [examples](examples) | Example applications demonstrating various use cases (SDF learning, deferred shading, texture learning) |
-| [tests](tests) | Unit tests for validating the framework components |
-| [util](util) | Utility modules for graphics operations, camera handling, and mesh processing |
-| [resources](resources) | 3D models and textures used by the example applications |
+| [**neural**](neural) | Core neural network framework modules implementing layers, activations, optimizers, and losses in Slang |
+| [**ngp**](ngp) | Neural Graphics Primitives implementation including dense grids and multi-level feature grids |
+| [**examples**](examples) | Example applications demonstrating various use cases (SDF learning, deferred shading, texture learning) |
+| [**tests**](tests) | Unit tests for validating the framework components |
+| [**util**](util) | Utility modules for graphics operations, camera handling, and mesh processing |
+| [**resources**](resources) | 3D models and textures used by the example applications |

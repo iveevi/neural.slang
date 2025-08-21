@@ -12,7 +12,7 @@ import time
 HERE = ROOT / "examples" / "deferred"
 
 
-class RenderingPipeline:
+class Pipeline:
     @staticmethod
     def load_specialization_module(device: spy.Device, mlp: MLP):
         source = f"""
@@ -410,7 +410,7 @@ def main():
     mlp_optimizer_states = mlp_train.alloc_optimizer_states(device, optimizer)
     grid_optimizer_states = grid_train.alloc_optimizer_states(device, optimizer)
     
-    rendering_pipeline = RenderingPipeline(device, mlp_train)
+    rendering_pipeline = Pipeline(device, mlp_train)
     
     assert device.has_feature(spy.Feature.rasterization)
     

@@ -11,7 +11,7 @@ from ngp import AddressBasedMLP, Adam
 HERE = ROOT / "examples" / "texture"
 
 
-class RenderingPipeline:
+class Pipeline:
     @staticmethod
     def load_specialization_module(device: spy.Device, mlp: AddressBasedMLP, levels: int):
         source = f"""
@@ -92,7 +92,7 @@ def main():
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
 
     # training_pipeline = TrainingPipeline(device, network)
-    pipeline = RenderingPipeline(device, mlp, 8)
+    pipeline = Pipeline(device, mlp, 8)
 
     app = App(device)
 
