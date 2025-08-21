@@ -1,6 +1,5 @@
-from ..util import *
+from util import *
 from PIL import Image
-from common import *
 from dataclasses import dataclass
 from ngp import AddressBasedMLP, MLP, Adam, Optimizer, DenseGrid
 from typing import Any

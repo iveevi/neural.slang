@@ -2,7 +2,7 @@ import pathlib
 import pytest
 import slangpy as spy
 import numpy as np
-from common import *
+from util import *
 
 
 @pytest.fixture(scope="function")

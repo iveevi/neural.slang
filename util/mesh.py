@@ -2,7 +2,7 @@ import numpy as np
 import trimesh
 import slangpy as spy
 from dataclasses import dataclass
-from common.buffer import create_buffer_32b
+from .buffer import create_buffer_32b
 
 
 @dataclass

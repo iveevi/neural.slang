@@ -16,8 +16,7 @@ def create_device(
     # Always include neural path
     include_paths = [
         ROOT / "neural",
-        ROOT / "examples" / "slang",
-        ROOT / "examples" / "networks" / "slang", # TODO: remove
+        ROOT / "util" / "slang",
         ROOT / "ngp" / "slang",
     ]
     

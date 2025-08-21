@@ -3,7 +3,7 @@ import pytest
 import slangpy as spy
 import torch
 from .conftest import assert_close
-from common import *
+from util import *
 
 
 def create_specialization_module(device, in_size):

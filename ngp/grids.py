@@ -1,4 +1,4 @@
-from common import *
+from util import *
 from dataclasses import dataclass
 from .objects import Optimizer, Grid
 from .optimizers import Adam

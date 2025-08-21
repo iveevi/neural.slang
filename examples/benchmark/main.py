@@ -1,22 +1,102 @@
 import numpy as np
 import seaborn as sns
 import slangpy as spy
-import pathlib
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-import argparse
 import matplotlib.pyplot as plt
 import time
 from functools import wraps
 from collections import defaultdict
-
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
+from util import *
+from ngp import AddressBasedMLP, Adam
+from util.encoders import FourierEncoder
 
-from .networks.separate_buffers import Network as SeparateBuffersNetwork, TrainingPipeline as SeparateBuffersTrainingPipeline
-from .networks.addresses import Network as AddressesNetwork, TrainingPipeline as AddressesTrainingPipeline
-from .networks.pytorch import PyTorchNetwork
-from common import *
+
+HERE = ROOT / "examples" / "benchmark"
+
+
+# Utility functions for MLP operations
+def get_layer_shapes(mlp: AddressBasedMLP):
+    return [
+        (mlp.input, mlp.hidden),
+        *[(mlp.hidden, mlp.hidden) for _ in range(mlp.hidden_layers)],
+        (mlp.hidden, mlp.output),
+    ]
+
+
+def copy_from_pytorch(mlp: AddressBasedMLP, pytorch_model: nn.Sequential, encoded_size: int):
+    # Check that the structures match
+    assert mlp.input == encoded_size, f"Input size mismatch: {mlp.input} != {encoded_size}"
+    
+    # Calculate layer addresses
+    layer_shapes = get_layer_shapes(mlp)
+    sizes = [(s[0] + 1) * s[1] for s in layer_shapes]  # +1 for bias
+    layer_addresses = np.cumsum([0, *sizes])[:-1].astype(np.uint32)
+    
+    # Copy each layer
+    parameters = mlp.parameter_buffer.to_numpy().view(np.float32)
+    layer_idx = 0
+    for module in pytorch_model:
+        if isinstance(module, nn.Linear):
+            layer_params = linear_to_numpy(module).flatten()
+            address = layer_addresses[layer_idx]
+            shape = layer_shapes[layer_idx]
+            size = (shape[0] + 1) * shape[1]
+            parameters[address:address + size] = layer_params
+            layer_idx += 1
+    
+    mlp.parameter_buffer.copy_from_numpy(parameters)
+
+
+class Pipeline:
+    @staticmethod
+    def load_specialization_module(device: spy.Device, mlp: AddressBasedMLP, levels: int):
+        source = f"""
+        export static const int Hidden = {mlp.hidden};
+        export static const int HiddenLayers = {mlp.hidden_layers};
+        export static const int Levels = {levels};
+        """
+        return device.load_module_from_source("specialization", source)
+
+    def __init__(self, device: spy.Device, mlp: AddressBasedMLP, levels: int):
+        SOURCE = HERE / "slang" / "main.slang"
+        
+        self.device = device
+        self.module = device.load_module(str(SOURCE))
+        self.specialization_module = self.load_specialization_module(device, mlp, levels)
+
+        self.forward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "forward")
+        self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
+
+    def forward(self, mlp: AddressBasedMLP, input_buffer: spy.Buffer, output_buffer: spy.Buffer, sample_count: int):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.forward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp.dict()
+            cursor.inputBuffer = input_buffer
+            cursor.outputBuffer = output_buffer
+            cmd.dispatch(thread_count=(sample_count, 1, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
+
+    def backward(self, mlp: AddressBasedMLP, input_buffer: spy.Buffer, expected_buffer: spy.Buffer, sample_count: int):
+        command_encoder = self.device.create_command_encoder()
+
+        with command_encoder.begin_compute_pass() as cmd:
+            shader_object = cmd.bind_pipeline(self.backward_pipeline)
+            cursor = spy.ShaderCursor(shader_object)
+            cursor.mlp = mlp.dict()
+            cursor.inputBuffer = input_buffer
+            cursor.expectedBuffer = expected_buffer
+            cursor.boost = 1.0 / sample_count
+            cmd.dispatch(thread_count=(sample_count, 1, 1))
+
+        self.device.submit_command_buffer(command_encoder.finish())
 
 
 class ProfilerState:
@@ -257,41 +337,44 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
     time_data = np.array(time_data, dtype=np.float32).reshape(-1, 1)
     signal = np.array(signal, dtype=np.float32).reshape(-1, 1)
 
-    # Configuration
-    levels = 8
-
-    # Prepare SlangPy
-    slangpy_device = create_device()
-
-    slangpy_network = AddressesNetwork(
-        slangpy_device,
-        hidden=hidden_size,
-        hidden_layers=hidden_layers,
-        levels=levels,
-        input=1,
-        output=1,
-    )
-    slangpy_pipeline = AddressesTrainingPipeline(slangpy_device, slangpy_network)
-    slangpy_input = slangpy_network.input_vec(time_data)
-    slangpy_signal = slangpy_network.output_vec(signal)
-    slangpy_output = slangpy_network.output_vec(np.zeros_like(signal))
-
     # Prepare PyTorch
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_network = PyTorchNetwork(
-        hidden=hidden_size,
-        levels=levels,
-        input=1,
-        output=1,
-        hidden_layers=hidden_layers,
-    ).to(torch_device)
-    torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8)
+    
+    # Create PyTorch model as Sequential
+    encoder = FourierEncoder(input_dim=1, levels=levels)
+    encoded_size = encoder.output_dim
+    
+    layers = []
+    layers.append(nn.Linear(encoded_size, hidden_size))
+    layers.append(nn.ReLU())
+    for _ in range(hidden_layers):
+        layers.append(nn.Linear(hidden_size, hidden_size))
+        layers.append(nn.ReLU())
+    layers.append(nn.Linear(hidden_size, 1))
+    
+    torch_network = nn.Sequential(encoder, *layers).to(torch_device)
+    torch_optimizer = torch.optim.Adam(torch_network.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-8)
     torch_input = torch.from_numpy(time_data).to(torch_device)
     torch_signal = torch.from_numpy(signal).to(torch_device)
 
-    # Copy weights from PyTorch to SlangPy
-    for i, layer in enumerate(torch_network.layers):
-        slangpy_network.copy_weights(i, layer)
+    # Prepare SlangPy
+    device = create_device()
+    
+    # Create MLP and optimizer
+    mlp = AddressBasedMLP.new(device, hidden=hidden_size, hidden_layers=hidden_layers, input=encoded_size, output=1)
+    optimizer = Adam(alpha=1e-3)
+    mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
+    
+    # Create pipeline
+    pipeline = Pipeline(device, mlp, levels)
+    
+    # Copy weights from PyTorch to Slang
+    copy_from_pytorch(mlp, torch_network, encoded_size)
+    
+    # Create buffers
+    input_buffer = create_buffer_32b(device, time_data)
+    signal_buffer = create_buffer_32b(device, signal)
+    output_buffer = create_buffer_32b(device, np.zeros_like(signal))
 
     # Profiled phases using the global profiler
     @profile('pytorch_forward')
@@ -303,9 +386,9 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
     
     @profile('slangpy_forward')
     def slangpy_forward():
-        slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
-        slangpy_device.wait_for_idle()
-        return slangpy_output
+        pipeline.forward(mlp, input_buffer, output_buffer, length)
+        device.wait_for_idle()
+        return output_buffer
     
     @profile('pytorch_backward')
     def pytorch_backward(loss):
@@ -315,8 +398,8 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
     
     @profile('slangpy_backward')
     def slangpy_backward():
-        slangpy_pipeline.backward(slangpy_network, slangpy_input, slangpy_signal)
-        slangpy_device.wait_for_idle()
+        pipeline.backward(mlp, input_buffer, signal_buffer, length)
+        device.wait_for_idle()
 
     @profile('pytorch_optimize')
     def pytorch_optimize():
@@ -325,8 +408,8 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
 
     @profile('slangpy_optimize')
     def slangpy_optimize():
-        slangpy_pipeline.optimize(slangpy_network)
-        slangpy_device.wait_for_idle()
+        mlp.update(optimizer, mlp_optimizer_states)
+        device.wait_for_idle()
 
     @profile('pytorch_inference')
     def pytorch_inference():
@@ -337,9 +420,9 @@ def run_benchmark(iterations=200, hidden_size=64, hidden_layers=0, levels=8):
 
     @profile('slangpy_inference')
     def slangpy_inference():
-        slangpy_pipeline.forward(slangpy_network, slangpy_input, slangpy_output)
-        slangpy_device.wait_for_idle()
-        return slangpy_output
+        pipeline.forward(mlp, input_buffer, output_buffer, length)
+        device.wait_for_idle()
+        return output_buffer
 
     # Training loops
     print("Running training benchmark...")
@@ -387,8 +470,8 @@ def main():
     print("="*80)
     plot_profiling_results()
 
+
 if __name__ == "__main__":
     sns.set_theme()
     sns.set_palette("pastel")
-
     main()

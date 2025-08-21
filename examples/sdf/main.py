@@ -4,9 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pytorch_volumetric as pv
 from scipy.ndimage import gaussian_filter
-from common import *
-
-from ..util import *
+from util import *
 from ngp import *
 
 

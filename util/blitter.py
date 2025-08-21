@@ -1,12 +1,14 @@
 import slangpy as spy
 from pathlib import Path
 from typing import Any
-from common import *
+from .buffer import *
+from .device import *
+from .linear import *
 
 class Blitter:
     def __init__(self, device: spy.Device):
         self.device = device
-        self.module = device.load_module(str(ROOT / "examples" / "slang" / "blit.slang"))
+        self.module = device.load_module(str(ROOT / "util" / "slang" / "blit.slang"))
         
         upscaled_program = device.link_program(
             modules=[self.module],
