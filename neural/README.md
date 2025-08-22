@@ -132,7 +132,7 @@ Interface for learnable encoders with parameters.
 |----------------|------|--------|---------|-------------|-------|
 | `IdentityEncoder<T, N>` | [encoders.slang](encoders.slang) | ✅ Fully implemented | ❌ Not tested | Pass-through encoder | None |
 | `FrequencyEncoder<T, Dim, Levels>` | [encoders.slang](encoders.slang) | ✅ Fully implemented | ✅ Tested | Fourier feature encoding with custom backward pass | None |
-| `OneBlobEncoder<T, N, K>` | [encoders.slang](encoders.slang) | ✅ Fully implemented | ❌ Not tested | Gaussian kernel encoding for continuous representations | None |
+| `OneBlobEncoder<T, N, K>` | [encoders.slang](encoders.slang) | ✅ Fully implemented | ✅ Tested | Gaussian kernel encoding for continuous representations | None |
 | `SphericalHarmonicsEncoder<T, Levels>` | [encoders.slang](encoders.slang) | ❌ Not implemented | ➖ N/A | Placeholder for spherical harmonics encoding | None |
 
 ### Learnable Encoders

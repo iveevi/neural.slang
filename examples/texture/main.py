@@ -1,11 +1,8 @@
 import numpy as np
-import seaborn as sns
-from scipy.ndimage import gaussian_filter
-import matplotlib.pyplot as plt
 import slangpy as spy
 from PIL import Image
 from util import *
-from ngp import AddressBasedMLP, Adam
+from ngp import AddressBasedMLP, Adam, RandomFourierFeatures
 
 
 HERE = ROOT / "examples" / "texture"
@@ -31,26 +28,28 @@ class Pipeline:
         self.render_neural_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "render_neural")
         self.backward_pipeline = create_compute_pipeline(device, self.module, [self.specialization_module], "backward")
 
-    def render_neural(self, mlp: AddressBasedMLP, target_texture: spy.Texture):
+    def render_neural(self, mlp: AddressBasedMLP, encoder: RandomFourierFeatures, target_texture: spy.Texture):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.render_neural_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.mlp = mlp.dict()
+            cursor.encoder = encoder.dict()
             cursor.targetTexture = target_texture
             cursor.targetResolution = (target_texture.width, target_texture.height)
             cmd.dispatch(thread_count=(target_texture.width, target_texture.height, 1))
 
         self.device.submit_command_buffer(command_encoder.finish())
 
-    def backward(self, mlp: AddressBasedMLP, samples: spy.Buffer, expected: spy.Buffer, sample_count: int):
+    def backward(self, mlp: AddressBasedMLP, encoder: RandomFourierFeatures, samples: spy.Buffer, expected: spy.Buffer, sample_count: int):
         command_encoder = self.device.create_command_encoder()
 
         with command_encoder.begin_compute_pass() as cmd:
             shader_object = cmd.bind_pipeline(self.backward_pipeline)
             cursor = spy.ShaderCursor(shader_object)
             cursor.mlp = mlp.dict()
+            cursor.encoder = encoder.dict()
             cursor.samples = samples
             cursor.expected = expected
             cursor.boost = 1.0 / sample_count
@@ -86,10 +85,13 @@ def main():
 
     device = create_device()
 
-    levels = 8
     optimizer = Adam()
-    mlp = AddressBasedMLP.new(device, hidden=64, hidden_layers=2, input=4 * levels, output=3)
+
+    mlp = AddressBasedMLP.new(device, hidden=64, hidden_layers=2, input=32, output=3)
+    encoder = RandomFourierFeatures.new(device, 2, 32, 1e8)
+
     mlp_optimizer_states = mlp.alloc_optimizer_states(device, optimizer)
+    encoder_optimizer_states = encoder.alloc_optimizer_states(device, optimizer)
 
     # training_pipeline = TrainingPipeline(device, network)
     pipeline = Pipeline(device, mlp, 8)
@@ -105,21 +107,22 @@ def main():
         data=None,
     )
 
-    SAMPLE_COUNT = 1 << 10
+    SAMPLE_COUNT = 1 << 14
     sample_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 2), dtype=np.float32), 2)
     color_buffer = create_buffer_32b(device, np.zeros((SAMPLE_COUNT, 3), dtype=np.float32), 3)
 
     def loop(frame: Frame):
-        pipeline.render_neural(mlp, target_texture)
+        pipeline.render_neural(mlp, encoder, target_texture)
 
         samples = np.random.rand(SAMPLE_COUNT, 2).astype(np.float32)
         colors = sample(samples).astype(np.float32)
         sample_buffer.copy_from_numpy(samples)
         color_buffer.copy_from_numpy(colors)
 
-        pipeline.backward(mlp, sample_buffer, color_buffer, SAMPLE_COUNT)
+        pipeline.backward(mlp, encoder, sample_buffer, color_buffer, SAMPLE_COUNT)
 
         mlp.update(optimizer, mlp_optimizer_states)
+        encoder.update(optimizer, encoder_optimizer_states)
 
         frame.blit(target_texture)
 
@@ -127,7 +130,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sns.set_theme()
-    sns.set_palette("pastel")
-
     main()

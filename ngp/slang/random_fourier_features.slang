@@ -1,21 +1,18 @@
 implementing ngp;
 
-import neural;
-
-public struct DenseGrid<int Dimension, int Features> : IOptimizable<float>
+public struct RandomFourierFeatures<int Dim, int Features> : IOptimizable<float>
 {
-    public typealias Impl = DenseGridImpl<Dimension, Features>;
     public typealias FeatureVector = InlineVector<float, Features>;
+    public typealias InputVector = InlineVector<float, Dim>;
 
     public typealias Parameters = StructuredBufferStorage<float>;
-    public typealias Configuration = This;
-    public typealias Dual = DifferentialPtrPair<Parameters>;
+    public typealias Dual = DifferentialPtrPair<StructuredBufferStorage<float>>;
+
+    public static const int In = Dim;
+    public static const int Out = Features;
 
     RWStructuredBuffer<float> parameterBuffer;
     RWStructuredBuffer<float> gradientBuffer;
-
-    int offset;
-    int resolution;
 
     public property Parameters parameters
     {
@@ -23,14 +20,7 @@ public struct DenseGrid<int Dimension, int Features> : IOptimizable<float>
             return StructuredBufferStorage<float>(parameterBuffer);
         }
     }
-
-    public property Configuration configuration
-    {
-        get {
-            return this;
-        }
-    }
-
+    
     public property Dual dual
     {
         get {
@@ -39,7 +29,7 @@ public struct DenseGrid<int Dimension, int Features> : IOptimizable<float>
             return DifferentialPtrPair<StructuredBufferStorage<float>>(p, g);
         }
     }
-    
+
     public void update<Optimizer>(Optimizer optimizer, inout Optimizer.State state, uint tid)
         where Optimizer : IOptimizer<float>
     {
@@ -48,11 +38,9 @@ public struct DenseGrid<int Dimension, int Features> : IOptimizable<float>
     }
 
     [BackwardDifferentiable]
-    public static FeatureVector eval(Parameters parameters, no_diff Configuration configuration, InlineVector<float, Dimension> p)
+    public FeatureVector eval(Parameters parameters, InputVector input)
     {
-        return Impl(
-            configuration.offset,
-            configuration.resolution
-        ) .sample(parameters, p);
+        let encoder = RandomFourierEncoder<float, Dim, Features, StructuredBufferStorage<float>>(0);
+        return encoder.eval<InputVector, FeatureVector>(parameters, input);
     }
 }

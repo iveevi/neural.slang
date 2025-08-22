@@ -107,6 +107,10 @@ public struct FrequencyEncoder<T, int Dim, int Levels> : IEncoder<T, Dim, 2 * Le
     }
 }
 
+/////////////////////////////////
+// Randomized Fourier features //
+/////////////////////////////////
+
 public struct RandomFourierEncoder<T, int Dim, int Features, Storage> : ILearnableEncoder<T, Dim, Features, Storage>
     where T : __BuiltinFloatingPointType & IArithmeticAtomicable
     where Storage : IStorage<T>
@@ -115,7 +119,12 @@ public struct RandomFourierEncoder<T, int Dim, int Features, Storage> : ILearnab
     public static const int In = Dim;
     public static const int Out = Features;
 
-    Storage.Address transform;
+    Storage.Address address;
+
+    public __init(Storage.Address address)
+    {
+        this.address = address;
+    }
 
     [BackwardDifferentiable]
     public OutputVector eval<InputVector, OutputVector>(Storage storage, InputVector input)
@@ -123,7 +132,7 @@ public struct RandomFourierEncoder<T, int Dim, int Features, Storage> : ILearnab
         where OutputVector : IVector<T, Features>
         where OutputVector.Differential == OutputVector
     {
-        return input.apply<Features, false, Storage, OutputVector>(storage, transform).sin();
+        return input.apply<Features, false, Storage, OutputVector>(storage, address).sin();
     }
 }
 

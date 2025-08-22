@@ -19,3 +19,4 @@ __include "address_based_mlp.slang";
 __include "dense_grid_impl.slang";
 __include "dense_grid.slang";
 __include "multi_level_dense_grid.slang";
+__include "random_fourier_features.slang";

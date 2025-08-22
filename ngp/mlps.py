@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from .objects import MLP, Optimizable
+from .objects import MLP
 import slangpy as spy
 import numpy as np
 import torch.nn as nn
